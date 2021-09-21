@@ -1,0 +1,35 @@
+{
+  "name": "better-json2",
+  "displayName": "better-json",
+  "description": "Extended JSON possibilities",
+  "version": "0.0.1",
+  "watch": {
+    "gr": "json.ne"
+  },
+  "scripts": {
+    "watch": "npm-watch",
+    "bson": "node watch.js '.' 4",
+    "gr": "cls && nearleyc json.ne -o json.js"
+  },
+  "dependencies": {
+    "benchmark": "^2.1.4",
+    "browserify-fs": "^1.0.0",
+    "chokidar": "^3.4.0",
+    "microtime": "^3.0.0",
+    "moo": "^0.5.1",
+    "nearley": "^2.20.1",
+    "npm-watch": "^0.11.0"
+  },
+  "main": "index.js",
+  "keywords": [
+    "better-json",
+    "json",
+    "multiline",
+    "javascript"
+  ],
+  "bin": {
+    "better-json2": ""
+  },
+  "author": "basescript.net",
+  "license": "ISC"
+}
