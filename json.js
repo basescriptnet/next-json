@@ -3,124 +3,159 @@
 (function () {
 function id(x) { return x[0]; }
 
-console.clear()
-const moo = require('moo')
-// add html
-let grammarObj = {
-	htmlContent: {
-		match: /\(\s*\(?:(?!>\s*\))*<[\s\S]+\>\s*\)/, lineBreaks: true
-	},
-	// hexadecimals
-	hexLong: /#[A-Za-z0-9]{6}/, // used for css colors
-	hexShort: /#[A-Za-z0-9]{3}/, // used for css colors
-	number: /(?:[0-9]|[1-9][0-9]+)(?:\.[0-9]+)?(?:[eE][-+]?[0-9]+)?\b/,
-	property: /(?:--)?[A-Za-z_]+[A-Za-z0-9_-]*[A-Za-z0-9_]*/,
-	comment: /\/\/.*/,
-	operator: /\+|-|\/|\*|%/,
-	variable: /\$[A-Za-z_0-9\$]+/,
-	// commentBlock: /\/\*[.*|\r?\n]\*\//, // /* ... */
-    space: {match: /\s+/, lineBreaks: true},
-	random: "random",
-	join: "join",
-	length: "length",
-	log: "log",
-	dstring: {match: /"(?:\\["bfnrt\/\\]|\\u[a-fA-F0-9]{4}|[^"\\])*"/},
-	sstring: {match: /'(?:\\['fnrt\/\\]|\\u[a-fA-F0-9]{4}|[^'\\])*'/, value: x => '\"' + x.slice(1, -1) + '\"'},
-	tstring: {match: /`(?:\\[`fnrt\/\\]|\\u[a-fA-F0-9]{4}|[^`\\])*`/, lineBreaks: true, value: x => x.slice(1, -1)},
-	htmlContent: {match: /html`(?:\\[`fnrt\/\\]|\\u[a-fA-F0-9]{4}|[^`\\])*`/, lineBreaks: true, value: x => x.slice(4)},
-	'?': '?',
-	'>': '>',
-	'<': '<',
-	'>=': '>=',
-	'<=': '<=',
-	'!=': '!=',
-	'!==': '!==',
-	'==': '==',
-	'===': '===',
-	'&&': '&&',
-	'and': 'and',
-	'or': 'or',
-	'not': 'not',
-	'is': 'is',
-	'||': '||',	
-	// other
-    '{': '{',
-    '}': '}',
-    '[': '[',
-    ']': ']',
-	'(': '(',
-	')': ')',
-    ',': ',',
-    ':': ':',
-	'=': '=',
-	';': ';',
-	'!': '!',
-	"import": "import",
-	"invert": "invert",
-	'debugger': 'debugger',
-	// booleans
-    true: 'true',
-    false: 'false',
-    null: 'null',
-}
-let lexer = moo.compile(grammarObj);
-
+	//console.clear()
+	const lexer = require('./lexer');
+	let log = console.log.bind(console)
 
 
 
 //const $this = {};
 const fs = require('fs');
-//const sp = require('sync-promise');
-let variables = {};
-//$this.variables = variables;
-
-function Type(item) {
-	switch (typeof item) {
-		case 'string':
-			return 'string';
-		case 'number':
-			return 'number';
-		case 'boolean':
-			return 'boolean';
-		case 'undefined':
-			//throw new Error(`${item} is not defined`);
-			return 'undefined';
-		case 'object':
-			if (Array.isArray(item))
-				return 'array';
-			if (item === null)
-				return 'null';
-			return 'object';
+const required = (functionName, argumentName, item, type) => {
+	if (Type.isUndefined(item)) {
+		Type.ArgumentError(`"${argumentName}" is required for "${functionName}" function, but none is provided.`);
+	}
+	else if (type && type != 'any') {
+		if (typeof type === 'string' && Type(item) !== type
+		|| Array.isArray(type) && !type.includes(Type(item)))
+		Type.ArgumentError(`"${argumentName}" at "${functionName}()" must be typeof "${typeof type === 'string' ? type : type.join('/')}", got "${Type(item)}" instead.`);
 	}
 }
-Type.isArray = (item) => {
-	return Type(item) === 'array'
-}
-Type.isNumber = (item) => {
-	return Type(item) === 'number'
-}
-Type.isBoolean = (item) => {
-	return Type(item) === 'boolean'
-}
-Type.isObject = (item) => {
-	return Type(item) === 'object'
-}
-Type.isString = (item) => {
-	return Type(item) === 'string'
-}
-Type.isNull = (item) => {
-	return Type(item) === 'null'
-}
-Type.isUndefined = (item) => {
-	return Type(item) === 'undefined'
-}
-Type.TypeError = (expectedType, recieved) => {
-	throw new TypeError(`Unexpected input type. Expecteg "${expectedType}", recieved "${recieved}".`);
-}
-Type.mayBeBoolean = item => {
-	let type = Type(item)
-	return ['string', 'number', 'boolean'].includes(type)
-}
+const variables = {};
+const functions = {
+	error (message) {
+		required('error', 'message', message, 'any');
+		console.error('>>> ' + message)
+		return message
+	},
+	log (message) {
+		required('log', 'message', message, 'any');
+		log('>>> ' + message)
+		return message
+	},
+	len (array) {
+		required('len', 'array', array, 'array');
+	},
+	sqrt (number) {
+		required('sqrt', 'First argument', number, 'number');
+		return Math.sqrt(number)
+	},
+	pow (x, y) {
+		required('pow', 'First argument', x, 'number');
+		required('pow', 'Second argument', y, 'number');
+		return Math.pow(x, y)
+	},
+	length (item) {
+		required('length', 'First argument', item, ['array', 'object', 'string']);
+		if (Type.isString(item))
+			return item.length;
+		else {
+			return Object.keys(item).length
+		}
+
+	},
+	join (args, separator) {
+		required('join', 'First argument', args, 'array');
+		if (args.length === 0)
+			return '';
+		let result = '';
+		args.map(i => functions.String(i));
+		return args.join(
+			separator !== undefined ? functions.String(separator)
+				: undefined
+		)
+	},
+	random (min, max) {
+		if (min === undefined) {
+			return +Math.random().toFixed(2)
+		} else if (max === undefined) {
+			// max = min
+			return ~~(Math.random() * min)
+		} else {
+			if (min > max)
+				return 0;
+			return ~~(Math.random() * (max - min) + min)
+		}
+	},
+	String (item) {
+		required('String', 'At least one argument', item)
+		switch (Type(item)) {
+			case 'object':
+				return 'object';
+			case 'array':
+				return 'array';
+			default:
+				return item + '';
+		}
+	},
+	Number (item) {
+		required('Number', 'At least one argument', item)
+		return (item)|0 // bitwise | turn anything inside the () into a number
+	},
+	abs (number) {
+		required('abs', 'First argument', number, 'number')
+		return Math.abs(number) // bitwise | turn anything inside the () into a number
+	},
+	invert (hex) {
+		required('invert', 'First argument', hex, 'hex')
+		return invertHex(hex);
+	},
+	round (number) {
+		required('round', 'First argument', number, 'number')
+		return Math.round(number)
+	},
+	sum (first, second, ...rest) {
+		required('sum', 'First argument', first, 'number');
+		required('sum', 'Second argument', second, 'number');
+		for (let i = 0; i < rest.length; i++) {
+			let j = rest[i];
+			required('sum', 'All arguments', j, 'number');
+			if (j < 0) rest[i] = '(' + rest[i] + ')'
+		}
+		return eval(`(${first})+(${second})+${rest.length ? rest.join('+') : 0}`);
+	},
+	reduce (first, second, ...rest) {
+		required('sum', 'First argument', first, 'number');
+		required('sum', 'Second argument', second, 'number');
+		for (let i = 0; i < rest.length; i++) {
+			let j = rest[i];
+			required('sum', 'All arguments', j, 'number');
+			if (j < 0) rest[i] = '(' + rest[i] + ')'
+		}
+		return eval(`(${first})-(${second})-${rest.length ? rest.join('-') : 0}`);
+	},
+	multiply (first, second, ...rest) {
+		required('sum', 'First argument', first, 'number');
+		required('sum', 'Second argument', second, 'number');
+		for (let i = 0; i < rest.length; i++) {
+			let j = rest[i];
+			required('sum', 'All arguments', j, 'number');
+			if (j < 0) rest[i] = '(' + rest[i] + ')'
+		}
+		return eval(`(${first})*(${second})*${rest.length ? rest.join('*') : 1}`);
+	},
+	divide (first, second, ...rest) {
+		required('sum', 'First argument', first, 'number');
+		required('sum', 'Second argument', second, 'number');
+		if (second === 0)
+			Type.ArgumentError(`Function "divide" may accept only the first argument with a value 0.`);
+		for (let i = 0; i < rest.length; i++) {
+			let j = rest[i];
+			required('sum', 'All arguments', j, 'number');
+			if (j === 0)
+				Type.ArgumentError(`Function "divide()" may accept value 0 only for the first argument.`);
+			if (j < 0) rest[i] = '(' + rest[i] + ')'
+		}
+		return eval(`(${first})/(${second})/${rest.length ? rest.join('/') : 1}`);
+	},
+	isNull (item) {
+		required('isNull', 'At least one argument', item);
+		return item === null;
+	}
+};
+//$this.variables = variables;
+
+const Type = require('./Type')
 
 function storeVariable (varName, value) {
 	variables[varName] = value;
@@ -134,9 +169,9 @@ function getValue(varName) {
 	if (varName in variables) {
 		return variables[varName]
 	}
-	// console.warn(new Error(`${varName} is not defined. undefined is returned instead.`))
-	variables[varName] = undefined;
-	return undefined;
+	//console.warn(new Error(`${varName} is not defined. undefined is returned instead.`))
+	//variables[varName] = undefined;
+	//return undefined;
 }
 function extractPair(kv, output) {
     if(kv[0]) { output[kv[0]] = kv[1]; }
@@ -193,7 +228,6 @@ var grammar = {
     {"name": "process", "symbols": [], "postprocess": d => ''},
     {"name": "main$ebnf$1", "symbols": []},
     {"name": "main$ebnf$1$subexpression$1$subexpression$1", "symbols": ["var_assign"]},
-    {"name": "main$ebnf$1$subexpression$1$subexpression$1", "symbols": ["log"]},
     {"name": "main$ebnf$1$subexpression$1", "symbols": ["_", "main$ebnf$1$subexpression$1$subexpression$1"]},
     {"name": "main$ebnf$1", "symbols": ["main$ebnf$1", "main$ebnf$1$subexpression$1"], "postprocess": function arrpush(d) {return d[0].concat([d[1]]);}},
     {"name": "main", "symbols": ["main$ebnf$1", "json"], "postprocess": d => d[1]},
@@ -206,10 +240,12 @@ var grammar = {
         	return d[1][0];
         } },
     {"name": "json", "symbols": ["_", "myNull", "_"], "postprocess": d => null},
-    {"name": "log", "symbols": [{"literal":"log"}, {"literal":"("}, "_", "value", "_", {"literal":")"}, "_", {"literal":";"}], "postprocess": d => { console.log(`>>> ${d[3]}`) }},
     {"name": "html", "symbols": [(lexer.has("htmlContent") ? {type: "htmlContent"} : htmlContent)], "postprocess": d => d[0].value},
-    {"name": "varName", "symbols": [(lexer.has("variable") ? {type: "variable"} : variable)], "postprocess": d => d[0].value},
-    {"name": "variable", "symbols": ["varName"], "postprocess": d => getValue(d[0])},
+    {"name": "varName", "symbols": [(lexer.has("variableName") ? {type: "variableName"} : variableName)], "postprocess": d => d[0].value},
+    {"name": "variable", "symbols": ["varName"], "postprocess":  (d, l, reject) => {
+        	if (getValue(d[0]) === undefined) return reject;
+        	return getValue(d[0])
+        } },
     {"name": "var_assign$subexpression$1", "symbols": ["if"]},
     {"name": "var_assign$subexpression$1", "symbols": ["import"]},
     {"name": "var_assign$subexpression$1", "symbols": ["expr"]},
@@ -227,123 +263,105 @@ var grammar = {
         	return d[4][0];
         } },
     {"name": "is", "symbols": [{"literal":"is"}], "postprocess": d => "is"},
-    {"name": "expr", "symbols": ["expression"], "postprocess": arr => eval(arr[0].join(''))},
     {"name": "expr", "symbols": ["string_concat"], "postprocess": id},
+    {"name": "than", "symbols": [{"literal":"?"}], "postprocess": d => "?"},
+    {"name": "than", "symbols": [{"literal":"than"}], "postprocess": d => "?"},
+    {"name": "else", "symbols": [{"literal":"else"}], "postprocess": d => ":"},
+    {"name": "else", "symbols": [{"literal":":"}], "postprocess": d => ":"},
+    {"name": "if", "symbols": ["myNull", "_", "than", "_", "value", "_", "else", "_", "value"], "postprocess": d => d[8]},
+    {"name": "if", "symbols": ["myNull", "_", "than", "_", "value"], "postprocess": d => null},
     {"name": "if$subexpression$1", "symbols": ["variable"]},
-    {"name": "if$subexpression$1", "symbols": ["expr"]},
     {"name": "if$subexpression$1", "symbols": ["string"]},
     {"name": "if$subexpression$1", "symbols": ["number"]},
     {"name": "if$subexpression$1", "symbols": ["boolean"]},
-    {"name": "if$subexpression$1", "symbols": ["myNull"]},
     {"name": "if$subexpression$1", "symbols": ["condition"]},
-    {"name": "if", "symbols": ["if$subexpression$1", "_", {"literal":"?"}, "_", "value", "_", {"literal":":"}, "_", "value"], "postprocess":  d => {
-        	return d[0][0] ? d[4] : d[8]
+    {"name": "if", "symbols": ["if$subexpression$1", "_", "than", "_", "value", "_", "else", "_", "value"], "postprocess":  d => {
+        	if (Type.mayBeBoolean(d[0][0]))
+        		return d[0][0] ? d[4] : d[8]
+        	Type.TypeError('boolean', d[0][0]);
         }},
-    {"name": "condition", "symbols": ["conditionalValues", "_", {"literal":"=="}, "_", "conditionalValues"], "postprocess": d => d[0] == d[4]},
-    {"name": "conditionalValues", "symbols": ["variable"], "postprocess": id},
-    {"name": "conditionalValues$subexpression$1", "symbols": ["expr"]},
-    {"name": "conditionalValues$subexpression$1", "symbols": ["boolean"]},
-    {"name": "conditionalValues$subexpression$1", "symbols": ["number"]},
+    {"name": "if$subexpression$2", "symbols": ["variable"]},
+    {"name": "if$subexpression$2", "symbols": ["string"]},
+    {"name": "if$subexpression$2", "symbols": ["number"]},
+    {"name": "if$subexpression$2", "symbols": ["boolean"]},
+    {"name": "if$subexpression$2", "symbols": ["condition"]},
+    {"name": "if", "symbols": ["if$subexpression$2", "_", "than", "_", "value"], "postprocess":  d => {
+        	if (Type.mayBeBoolean(d[0][0]))
+        		return d[0][0] ? d[4] : null
+        	Type.TypeError('boolean', d[0][0]);
+        }},
+    {"name": "condition", "symbols": ["boolean", "_", {"literal":"=="}, "_", "boolean"], "postprocess": d => d[0] === d[4]},
+    {"name": "condition", "symbols": ["string", "_", {"literal":"=="}, "_", "string"], "postprocess": d => d[0] === d[4]},
+    {"name": "condition", "symbols": ["myNull", "_", {"literal":"=="}, "_", "myNull"], "postprocess": d => d[0] === d[4]},
+    {"name": "condition", "symbols": ["array", "_", {"literal":"=="}, "_", "array"], "postprocess": d => JSON.stringify(d[0]) === JSON.stringify(d[4])},
+    {"name": "condition", "symbols": ["object", "_", {"literal":"=="}, "_", "object"], "postprocess": d => JSON.stringify(d[0]) === JSON.stringify(d[4])},
+    {"name": "condition", "symbols": ["boolean", "_", {"literal":"!="}, "_", "boolean"], "postprocess": d => d[0] !== d[4]},
+    {"name": "condition", "symbols": ["string", "_", {"literal":"!="}, "_", "string"], "postprocess": d => d[0] !== d[4]},
+    {"name": "condition", "symbols": ["myNull", "_", {"literal":"!="}, "_", "myNull"], "postprocess": d => d[0] !== d[4]},
+    {"name": "condition", "symbols": ["array", "_", {"literal":"!="}, "_", "array"], "postprocess": d => JSON.stringify(d[0]) !== JSON.stringify(d[4])},
+    {"name": "condition", "symbols": ["object", "_", {"literal":"!="}, "_", "object"], "postprocess": d => JSON.stringify(d[0]) !== JSON.stringify(d[4])},
+    {"name": "condition", "symbols": ["number", "_", {"literal":"=="}, "_", "number"], "postprocess": d => d[0] === d[4]},
+    {"name": "condition", "symbols": ["number", "_", {"literal":"!="}, "_", "number"], "postprocess": d => d[0] !== d[4]},
+    {"name": "condition", "symbols": ["number", "_", {"literal":">"}, "_", "number"], "postprocess": d => d[0] > d[4]},
+    {"name": "condition", "symbols": ["number", "_", {"literal":"<"}, "_", "number"], "postprocess": d => d[0] < d[4]},
+    {"name": "condition", "symbols": ["number", "_", {"literal":">="}, "_", "number"], "postprocess": d => d[0] >= d[4]},
+    {"name": "condition", "symbols": ["number", "_", {"literal":"<="}, "_", "number"], "postprocess": d => d[0] <= d[4]},
+    {"name": "condition", "symbols": ["condition", "_", (lexer.has("logical_and") ? {type: "logical_and"} : logical_and), "_", "condition"], "postprocess": d => d[0] && d[4]},
+    {"name": "condition", "symbols": ["condition", "_", (lexer.has("logical_or") ? {type: "logical_or"} : logical_or), "_", "condition"], "postprocess": d => d[0] || d[4]},
+    {"name": "condition", "symbols": ["conditionalValues", "_", (lexer.has("logical_and") ? {type: "logical_and"} : logical_and), "_", "conditionalValues"], "postprocess": d => d[0] && d[4]},
+    {"name": "condition", "symbols": ["condition", "_", (lexer.has("logical_and") ? {type: "logical_and"} : logical_and), "_", "conditionalValues"], "postprocess": d => d[0] && d[4]},
+    {"name": "condition", "symbols": ["conditionalValues", "_", (lexer.has("logical_and") ? {type: "logical_and"} : logical_and), "_", "condition"], "postprocess": d => d[0] && d[4]},
+    {"name": "condition", "symbols": ["conditionalValues", "_", (lexer.has("logical_or") ? {type: "logical_or"} : logical_or), "_", "conditionalValues"], "postprocess": d => d[0] || d[4]},
+    {"name": "condition", "symbols": ["conditionalValues", "_", (lexer.has("logical_or") ? {type: "logical_or"} : logical_or), "_", "condition"], "postprocess": d => d[0] || d[4]},
+    {"name": "condition", "symbols": ["condition", "_", (lexer.has("logical_or") ? {type: "logical_or"} : logical_or), "_", "conditionalValues"], "postprocess": d => d[0] || d[4]},
     {"name": "conditionalValues$subexpression$1", "symbols": ["string"]},
+    {"name": "conditionalValues$subexpression$1", "symbols": ["number"]},
     {"name": "conditionalValues$subexpression$1", "symbols": ["myNull"]},
-    {"name": "conditionalValues", "symbols": ["conditionalValues$subexpression$1"], "postprocess": d=> d[0][0]},
-    {"name": "expression", "symbols": ["expression", "_", (lexer.has("operator") ? {type: "operator"} : operator), "_", "number"], "postprocess": ([fst, , _, , snd]) => [...fst, _.value, snd]},
-    {"name": "expression", "symbols": ["expression", "_", (lexer.has("operator") ? {type: "operator"} : operator), "_", "boolean"], "postprocess": ([fst, , _, , snd]) => [...fst, _.value, Number(snd)]},
-    {"name": "expression", "symbols": ["expression", "_", (lexer.has("operator") ? {type: "operator"} : operator), "_", "variable"], "postprocess":  ([fst, , _, , snd], l, reject) => {
-        	if (typeof snd != 'number') return reject;
-        	return [...fst, _.value, snd] 
-        } },
-    {"name": "expression", "symbols": ["number", "_", (lexer.has("operator") ? {type: "operator"} : operator), "_", "variable"], "postprocess": ([fst, , _, , snd]) => [fst, _.value, Number(snd)]},
-    {"name": "expression", "symbols": ["number", "_", (lexer.has("operator") ? {type: "operator"} : operator), "_", "number"], "postprocess": ([fst, , _, , snd]) => [fst, _.value, snd]},
-    {"name": "expression", "symbols": ["number", "_", (lexer.has("operator") ? {type: "operator"} : operator), "_", "boolean"], "postprocess": ([fst, , _, , snd]) => [fst, _.value, Number(snd)]},
-    {"name": "expression", "symbols": ["boolean", "_", (lexer.has("operator") ? {type: "operator"} : operator), "_", "number"], "postprocess": ([fst, , _, , snd]) => [Number(fst), _.value, snd]},
-    {"name": "expression", "symbols": ["boolean", "_", (lexer.has("operator") ? {type: "operator"} : operator), "_", "boolean"], "postprocess": ([fst, , _, , snd]) => [Number(fst), _.value, Number(snd)]},
-    {"name": "expression", "symbols": ["boolean", "_", (lexer.has("operator") ? {type: "operator"} : operator), "_", "variable"], "postprocess":  ([fst, , _, , snd], l, reject) => {
-        	if (typeof snd != 'number') return reject;
-        	return [Number(fst), _.value, snd] 
-        } },
-    {"name": "expression", "symbols": ["variable", "_", (lexer.has("operator") ? {type: "operator"} : operator), "_", "boolean"], "postprocess":  ([fst, , _, , snd], l, reject) => {
-        	if (typeof fst != 'number') return reject;
-        	return [fst, _.value, Number(snd)] 
-        } },
-    {"name": "expression", "symbols": ["variable", "_", (lexer.has("operator") ? {type: "operator"} : operator), "_", "variable"], "postprocess":  ([fst, , _, , snd], l, reject) => {
-        	if (typeof fst != 'number') {
-        		if (typeof snd != 'number') {
-        			return reject;
-        		}
-        	}
-        	return [Number(fst), _.value, Number(snd)]
-        } },
-    {"name": "expression", "symbols": ["variable", "_", (lexer.has("operator") ? {type: "operator"} : operator), "_", "number"], "postprocess":  ([fst, , _, , snd], l, reject) => {
-        	if (typeof fst != 'number') return reject;
-        	return [fst, _.value, snd] 
-        } },
-    {"name": "string_concat$subexpression$1", "symbols": ["string", "_", {"literal":"+"}, "_", "string"]},
-    {"name": "string_concat$subexpression$1", "symbols": ["number", "_", {"literal":"+"}, "_", "string"]},
-    {"name": "string_concat$subexpression$1", "symbols": ["string", "_", {"literal":"+"}, "_", "number"]},
-    {"name": "string_concat$subexpression$1", "symbols": ["boolean", "_", {"literal":"+"}, "_", "string"]},
-    {"name": "string_concat$subexpression$1", "symbols": ["string", "_", {"literal":"+"}, "_", "boolean"]},
-    {"name": "string_concat$subexpression$1", "symbols": ["string", "_", {"literal":"+"}, "_", "variable"]},
-    {"name": "string_concat$subexpression$1", "symbols": ["variable", "_", {"literal":"+"}, "_", "string"]},
-    {"name": "string_concat", "symbols": ["string_concat$subexpression$1"], "postprocess": ([f]) => f[0] + f[4]},
-    {"name": "string_concat", "symbols": ["expression", "_", {"literal":"+"}, "_", "string"], "postprocess": d => eval(d[0].join('')) + d[4]},
-    {"name": "string_concat", "symbols": ["expression", "_", {"literal":"+"}, "_", "variable"], "postprocess":  ([fst, , _, , snd], l, reject) => {
-        	if (typeof snd != 'string') {
+    {"name": "conditionalValues$subexpression$1", "symbols": ["array"]},
+    {"name": "conditionalValues$subexpression$1", "symbols": ["object"]},
+    {"name": "conditionalValues$subexpression$1", "symbols": ["boolean"]},
+    {"name": "conditionalValues", "symbols": ["conditionalValues$subexpression$1"], "postprocess": d => d[0][0]},
+    {"name": "conditionalValues", "symbols": [{"literal":"("}, "_", "if", "_", {"literal":")"}], "postprocess": d => d[2]},
+    {"name": "conditionalValues", "symbols": [{"literal":"("}, "_", "conditionalValues", "_", {"literal":")"}], "postprocess": d => d[2]},
+    {"name": "number", "symbols": [(lexer.has("number") ? {type: "number"} : number)], "postprocess": d => parseFloat(d[0].value)},
+    {"name": "number", "symbols": [{"literal":"PI"}], "postprocess": d => 3.1415926536},
+    {"name": "number", "symbols": ["function"], "postprocess":  (d, l, reject) => {
+        	if (!Type.isNumber(d[0]))
         		return reject;
-        	}
-        	return eval(fst.join('')) + snd
+        	return d[0];
         } },
-    {"name": "string_concat$subexpression$2", "symbols": ["string"]},
-    {"name": "string_concat$subexpression$2", "symbols": ["number"]},
-    {"name": "string_concat$subexpression$2", "symbols": ["boolean"]},
-    {"name": "string_concat$subexpression$2", "symbols": ["variable"]},
-    {"name": "string_concat", "symbols": ["string_concat", "_", {"literal":"+"}, "_", "string_concat$subexpression$2"], "postprocess": d => { return d[0] + d[4] }},
-    {"name": "string_concat", "symbols": ["variable", "_", {"literal":"+"}, "_", "variable"], "postprocess": 
-        ([f,,,, s], l, reject) => {
-        	if (typeof f == 'string' || typeof s == 'string') {
-        		return f + s
-        	}
+    {"name": "number", "symbols": [{"literal":"("}, "_", "number", "_", {"literal":")"}], "postprocess": d => d[2]},
+    {"name": "number", "symbols": ["variable"], "postprocess":  (d, l, reject) => {
+        	if (Type.isNumber(d[0]))
+        		return d[0]
         	return reject;
-        }
-        	},
-    {"name": "string_concat$subexpression$3", "symbols": ["string"]},
-    {"name": "string_concat$subexpression$3", "symbols": ["number"]},
-    {"name": "string_concat$subexpression$3", "symbols": ["boolean"]},
-    {"name": "string_concat", "symbols": ["variable", "_", {"literal":"+"}, "_", "string_concat$subexpression$3"], "postprocess": 
-        ([f,,,, s], l, reject) => {
-        	//console.log(f, s)
-        	if (typeof f == 'string' || typeof s[0] == 'string') {
-        		return f + s[0]
-        	}
-        	return reject;
-        }
-        	},
-    {"name": "string_concat", "symbols": ["string_concat", "_", {"literal":"+"}, "_", "variable"], "postprocess": d => { return d[0] + d[4] }},
+        } },
+    {"name": "string_concat", "symbols": ["string", "_", {"literal":"+"}, "_", "string"], "postprocess": d => d[0] + d[4]},
     {"name": "boolean", "symbols": [{"literal":"not"}, "_", (lexer.has("space") ? {type: "space"} : space), "_", "condition"], "postprocess": d => !d[4]},
     {"name": "boolean", "symbols": ["is", "_", (lexer.has("space") ? {type: "space"} : space), "_", "condition"], "postprocess": d => d[4]},
-    {"name": "boolean$subexpression$1", "symbols": ["variable"]},
-    {"name": "boolean$subexpression$1", "symbols": ["number"]},
-    {"name": "boolean$subexpression$1", "symbols": ["string"]},
-    {"name": "boolean$subexpression$1", "symbols": ["boolean"]},
-    {"name": "boolean$subexpression$1", "symbols": ["arrayItem"]},
-    {"name": "boolean$subexpression$1", "symbols": ["objectItem"]},
-    {"name": "boolean", "symbols": [{"literal":"!"}, "boolean$subexpression$1"], "postprocess":  (d, l, reject) => {
-        	console.log(d)
-        	if (!Type.mayBeBoolean(d[1][0]))
-        		//Type.TypeError('boolean', Type(d[1]));
-        		return reject
-        } },
-    {"name": "boolean", "symbols": [{"literal":"!"}, {"literal":"true"}], "postprocess": d => false},
-    {"name": "boolean", "symbols": [{"literal":"!"}, {"literal":"false"}], "postprocess": d => true},
+    {"name": "boolean", "symbols": [{"literal":"!"}, "_", "boolean"], "postprocess": d => !d[2]},
+    {"name": "boolean", "symbols": [{"literal":"!"}, "_", {"literal":"("}, "_", "boolean", "_", {"literal":")"}], "postprocess": d => !d[4]},
     {"name": "boolean", "symbols": [{"literal":"true"}], "postprocess": d => true},
     {"name": "boolean", "symbols": [{"literal":"false"}], "postprocess": d => false},
-    {"name": "boolean$subexpression$2", "symbols": ["boolean"]},
-    {"name": "boolean$subexpression$2", "symbols": ["number"]},
-    {"name": "boolean$subexpression$2", "symbols": ["string"]},
-    {"name": "boolean", "symbols": [{"literal":"!"}, {"literal":"("}, "_", "boolean$subexpression$2", "_", {"literal":")"}], "postprocess": d => console.log(d) && !d[3][0]},
-    {"name": "boolean", "symbols": [{"literal":"!"}, {"literal":"("}, "_", "expr", "_", {"literal":")"}], "postprocess": d => console.log(d) && !d[3]},
-    {"name": "boolean", "symbols": [{"literal":"!"}, {"literal":"("}, "_", "variable", "_", {"literal":")"}], "postprocess": d =>console.log(d) && !d[3]},
+    {"name": "boolean", "symbols": [{"literal":"("}, "_", "boolean", "_", {"literal":")"}], "postprocess": d => d[2]},
+    {"name": "boolean", "symbols": [{"literal":"("}, "_", "condition", "_", {"literal":")"}], "postprocess": d => d[2]},
+    {"name": "boolean", "symbols": ["variable"], "postprocess":  (d, l, reject) => {
+        	if (Type.isBoolean(d[0]))
+        		return d[0]
+        	return reject;
+        } },
+    {"name": "boolean", "symbols": ["function"], "postprocess":  (d, l, reject) => {
+        	if (typeof d[0] !== 'boolean')
+        		return reject;
+        	return d[0]
+        } },
     {"name": "myNull", "symbols": [{"literal":"null"}], "postprocess": d => null},
+    {"name": "myNull", "symbols": [{"literal":"("}, "_", "myNull", "_", {"literal":")"}], "postprocess": d => d[2]},
+    {"name": "myNull", "symbols": ["variable"], "postprocess":  (d, l, reject) => {
+        	if (d[0] === null)
+        		return null
+        	return reject;
+        } },
     {"name": "object", "symbols": [{"literal":"{"}, "_", {"literal":"}"}], "postprocess": function(d) { return {}; }},
     {"name": "object$ebnf$1", "symbols": []},
     {"name": "object$ebnf$1$subexpression$1", "symbols": ["_", {"literal":","}, "_", "pair"]},
@@ -356,6 +374,11 @@ var grammar = {
         	if (!(typeof d[0] === 'object' && !Array.isArray(d[0]) && d[0] !== null))
         		return reject;
         	return d[0];
+        } },
+    {"name": "object", "symbols": ["variable"], "postprocess":  (d, l, reject) => {
+        	if (Type.isObject(d[0]))
+        		return d[0]
+        	return reject;
         } },
     {"name": "objectItem$subexpression$1", "symbols": ["object"]},
     {"name": "objectItem$subexpression$1", "symbols": ["variable"]},
@@ -391,6 +414,11 @@ var grammar = {
         	if (!Array.isArray(d[0])) return reject;
         	return d[0];
         } },
+    {"name": "array", "symbols": ["variable"], "postprocess":  (d, l, reject) => {
+        	if (Type.isArray(d[0]))
+        		return d[0]
+        	return reject;
+        } },
     {"name": "arrayItem$subexpression$1", "symbols": ["array"]},
     {"name": "arrayItem$subexpression$1", "symbols": ["variable"]},
     {"name": "arrayItem$subexpression$1", "symbols": ["arrayItem"]},
@@ -405,6 +433,20 @@ var grammar = {
         	return getArrayItem(f[s])
         }
         },
+    {"name": "function", "symbols": [(lexer.has("functionName") ? {type: "functionName"} : functionName), "arguments"], "postprocess":  d => {
+        	if (!functions[d[0]])
+        		Type.Error('Function is not defined.')
+        	return functions[d[0]](...d[1]);
+        } },
+    {"name": "arguments", "symbols": [{"literal":"("}, "_", {"literal":")"}], "postprocess": d => []},
+    {"name": "arguments$ebnf$1", "symbols": []},
+    {"name": "arguments$ebnf$1$subexpression$1", "symbols": ["_", {"literal":","}, "_", "value"]},
+    {"name": "arguments$ebnf$1", "symbols": ["arguments$ebnf$1", "arguments$ebnf$1$subexpression$1"], "postprocess": function arrpush(d) {return d[0].concat([d[1]]);}},
+    {"name": "arguments$ebnf$2$subexpression$1", "symbols": ["_", {"literal":","}]},
+    {"name": "arguments$ebnf$2", "symbols": ["arguments$ebnf$2$subexpression$1"], "postprocess": id},
+    {"name": "arguments$ebnf$2", "symbols": [], "postprocess": function(d) {return null;}},
+    {"name": "arguments", "symbols": [{"literal":"("}, "_", "value", "arguments$ebnf$1", "arguments$ebnf$2", "_", {"literal":")"}], "postprocess": d => extractArray(d)},
+    {"name": "value", "symbols": [{"literal":"("}, "_", "value", "_", {"literal":")"}], "postprocess": d => d[2]},
     {"name": "value", "symbols": ["if"], "postprocess": id},
     {"name": "value", "symbols": ["html"], "postprocess": id},
     {"name": "value", "symbols": ["condition"], "postprocess": id},
@@ -418,64 +460,30 @@ var grammar = {
     {"name": "value", "symbols": ["string"], "postprocess": id},
     {"name": "value", "symbols": ["hex"], "postprocess": id},
     {"name": "value", "symbols": ["expr"], "postprocess": id},
-    {"name": "value", "symbols": ["variable"], "postprocess": id},
-    {"name": "number", "symbols": [(lexer.has("number") ? {type: "number"} : number)], "postprocess": d => parseFloat(d[0].value)},
-    {"name": "number", "symbols": [{"literal":"+"}, "variable"], "postprocess": d => Number(d[1])},
-    {"name": "number", "symbols": [{"literal":"-"}, "variable"], "postprocess": d => -Number(d[1])},
-    {"name": "number", "symbols": [{"literal":"+"}, "boolean"], "postprocess": d => Number(d[1])},
-    {"name": "number", "symbols": [{"literal":"-"}, "boolean"], "postprocess": d => -Number(d[1])},
-    {"name": "number", "symbols": ["random"], "postprocess": id},
-    {"name": "number", "symbols": ["length"], "postprocess": id},
-    {"name": "random", "symbols": [{"literal":"random"}, {"literal":"("}, "_", {"literal":")"}], "postprocess": d => +Math.random().toFixed(2)},
-    {"name": "random", "symbols": [{"literal":"random"}, {"literal":"("}, "_", "number", "_", {"literal":")"}], "postprocess": d => Math.floor(Math.random() * d[3])},
-    {"name": "random", "symbols": [{"literal":"random"}, {"literal":"("}, "_", "number", "_", {"literal":","}, "_", "number", "_", {"literal":")"}], "postprocess": d=> Math.floor(Math.random() * (d[7] - d[3]) + d[3])},
-    {"name": "length$subexpression$1", "symbols": ["array"]},
-    {"name": "length$subexpression$1", "symbols": ["object"]},
-    {"name": "length", "symbols": [{"literal":"length"}, {"literal":"("}, "_", "length$subexpression$1", "_", {"literal":")"}], "postprocess": d => Object.keys(d[3][0]).length},
-    {"name": "length", "symbols": [{"literal":"length"}, {"literal":"("}, "_", "variable", "_", {"literal":")"}], "postprocess":  d => {
-        	let v = d[3];
-        	if (!Array.isArray(v) || (v && typeof v === 'object' && !(v instanceof Array))) {
-        		console.warn(
-        			new Error('[length()]: Argument #1 must be type of Array or Object, got ' + v + ' instead.')
-        		);
-        		return;
-        	}
-        	return Object.keys(v).length
-        } },
-    {"name": "invert$subexpression$1", "symbols": [(lexer.has("hexLong") ? {type: "hexLong"} : hexLong)]},
-    {"name": "invert$subexpression$1", "symbols": [(lexer.has("hexShort") ? {type: "hexShort"} : hexShort)]},
-    {"name": "invert", "symbols": [{"literal":"invert"}, {"literal":"("}, "_", "invert$subexpression$1", "_", {"literal":")"}], "postprocess": d => invertHex(d[3][0].value)},
-    {"name": "invert", "symbols": [{"literal":"invert"}, {"literal":"("}, "_", "variable", "_", {"literal":")"}], "postprocess":  d => {
-        	if (!/#[A-Za-z0-9]{3}/.test(d[3]) && !/#[A-Za-z0-9]{6}/.test(d[3])) {
-        		console.warn(
-        			new Error('[join()]: Argument #1 must be type of Array, got ' + d[3] + ' instead.')
-        		);
-        		return;
-        	}
-        	return invertHex(d[3]);
-        } },
+    {"name": "value", "symbols": ["myNull"], "postprocess": d => null},
     {"name": "hex", "symbols": [(lexer.has("hexLong") ? {type: "hexLong"} : hexLong)], "postprocess": d => d[0].value},
     {"name": "hex", "symbols": [(lexer.has("hexShort") ? {type: "hexShort"} : hexShort)], "postprocess": d => d[0].value},
-    {"name": "hex", "symbols": ["invert"], "postprocess": id},
-    {"name": "string$ebnf$1$subexpression$1", "symbols": [{"literal":","}, "_", "string", "_"]},
-    {"name": "string$ebnf$1", "symbols": ["string$ebnf$1$subexpression$1"], "postprocess": id},
-    {"name": "string$ebnf$1", "symbols": [], "postprocess": function(d) {return null;}},
-    {"name": "string", "symbols": [{"literal":"join"}, {"literal":"("}, "_", "array", "_", "string$ebnf$1", {"literal":")"}], "postprocess": d => d[3].join(!d[5] ? ',' : d[5][2])},
-    {"name": "string$ebnf$2$subexpression$1", "symbols": [{"literal":","}, "_", "string", "_"]},
-    {"name": "string$ebnf$2", "symbols": ["string$ebnf$2$subexpression$1"], "postprocess": id},
-    {"name": "string$ebnf$2", "symbols": [], "postprocess": function(d) {return null;}},
-    {"name": "string", "symbols": [{"literal":"join"}, {"literal":"("}, "_", "variable", "_", "string$ebnf$2", {"literal":")"}], "postprocess":  d => {
-        return Array.isArray(d[3])
-        ? d[3].join(!d[5] ? ',' : d[5][2])
-        : console.warn(
-        	new Error('[join()]: Argument #1 must be type of Array, got ' + d[3] + ' instead.')
-        ) } },
-    {"name": "string", "symbols": [(lexer.has("dstring") ? {type: "dstring"} : dstring)], "postprocess": function(d) { return JSON.parse(d[0].value) }},
-    {"name": "string", "symbols": [(lexer.has("sstring") ? {type: "sstring"} : sstring)], "postprocess": function(d) { return JSON.parse(d[0].value) }},
-    {"name": "string", "symbols": [(lexer.has("tstring") ? {type: "tstring"} : tstring)], "postprocess":  function(d) {
-        	return d[0].value
+    {"name": "hex", "symbols": [{"literal":"("}, "_", "hex", "_", {"literal":")"}], "postprocess": d => d[2]},
+    {"name": "hex", "symbols": ["variable"], "postprocess":  (d, l, reject) => {
+        	if (Type.isHex(d[0]))
+        		return d[0]
+        	return reject;
         } },
+    {"name": "string", "symbols": [(lexer.has("dstring") ? {type: "dstring"} : dstring)], "postprocess": d => d[0].value},
+    {"name": "string", "symbols": [(lexer.has("sstring") ? {type: "sstring"} : sstring)], "postprocess": d => d[0].value},
+    {"name": "string", "symbols": [(lexer.has("tstring") ? {type: "tstring"} : tstring)], "postprocess": d => d[0].value},
     {"name": "string", "symbols": ["hex"], "postprocess": id},
+    {"name": "string", "symbols": ["function"], "postprocess":  (d, l, reject) => {
+        	if (!Type.isString(d[0]))
+        		return reject;
+        	return d[0];
+        } },
+    {"name": "string", "symbols": [{"literal":"("}, "_", "string", "_", {"literal":")"}], "postprocess": d => d[2]},
+    {"name": "string", "symbols": ["variable"], "postprocess":  (d, l, reject) => {
+        	if (Type.isString(d[0]))
+        		return d[0]
+        	return reject;
+        } },
     {"name": "WS", "symbols": []},
     {"name": "WS", "symbols": [(lexer.has("space") ? {type: "space"} : space)], "postprocess": d => null},
     {"name": "_$ebnf$1", "symbols": []},
@@ -494,7 +502,7 @@ var grammar = {
         		let res = l;
         		try {
         			if (request.status === 200) {
-        				console.log(request.responseText);
+        				log(request.responseText);
         				return JSON.parse(request.responseText);
         			} else {
         				throw 'Resource not found'
@@ -507,7 +515,6 @@ var grammar = {
         	if (/\.next$/.test(d[0])) {
         		let read = readFile(d[0]).trim()
         		//let res = require('./parser.js')(read)
-        		debugger
         		return {}//JSON.parse(res);
         	} else */
         	// for now only json files are supported
@@ -516,7 +523,7 @@ var grammar = {
         		return JSON.parse(read.trim());
         	}
         	else {
-        		console.warn(`File ${d[0]} is not found.`)
+        		console.warn(`  File ${d[0]} is not found.`)
         		return l
         	}
         } }

@@ -1,6 +1,6 @@
 const nearley = require("nearley");
-const grammar = require("./json.js");
 module.exports = function (str) {
+    const grammar = require("./json.js"); // keep here, otherwise if grammar is changed, watch needs to be restarted
     let parser = new nearley.Parser(nearley.Grammar.fromCompiled(grammar));
     // if (str.trim().length == 0) return '';
     let result = (parser.feed(str)).results[0]

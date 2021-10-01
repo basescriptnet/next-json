@@ -1,66 +1,7 @@
 @{%
-console.clear()
-const moo = require('moo')
-// add html
-let grammarObj = {
-	htmlContent: {
-		match: /\(\s*\(?:(?!>\s*\))*<[\s\S]+\>\s*\)/, lineBreaks: true
-	},
-	// hexadecimals
-	hexLong: /#[A-Za-z0-9]{6}/, // used for css colors
-	hexShort: /#[A-Za-z0-9]{3}/, // used for css colors
-	number: /(?:[0-9]|[1-9][0-9]+)(?:\.[0-9]+)?(?:[eE][-+]?[0-9]+)?\b/,
-	property: /(?:--)?[A-Za-z_]+[A-Za-z0-9_-]*[A-Za-z0-9_]*/,
-	comment: /\/\/.*/,
-	operator: /\+|-|\/|\*|%/,
-	variable: /\$[A-Za-z_0-9\$]+/,
-	// commentBlock: /\/\*[.*|\r?\n]\*\//, // /* ... */
-    space: {match: /\s+/, lineBreaks: true},
-	random: "random",
-	join: "join",
-	length: "length",
-	log: "log",
-	dstring: {match: /"(?:\\["bfnrt\/\\]|\\u[a-fA-F0-9]{4}|[^"\\])*"/},
-	sstring: {match: /'(?:\\['fnrt\/\\]|\\u[a-fA-F0-9]{4}|[^'\\])*'/, value: x => '\"' + x.slice(1, -1) + '\"'},
-	tstring: {match: /`(?:\\[`fnrt\/\\]|\\u[a-fA-F0-9]{4}|[^`\\])*`/, lineBreaks: true, value: x => x.slice(1, -1)},
-	htmlContent: {match: /html`(?:\\[`fnrt\/\\]|\\u[a-fA-F0-9]{4}|[^`\\])*`/, lineBreaks: true, value: x => x.slice(4)},
-	'?': '?',
-	'>': '>',
-	'<': '<',
-	'>=': '>=',
-	'<=': '<=',
-	'!=': '!=',
-	'!==': '!==',
-	'==': '==',
-	'===': '===',
-	'&&': '&&',
-	'and': 'and',
-	'or': 'or',
-	'not': 'not',
-	'is': 'is',
-	'||': '||',	
-	// other
-    '{': '{',
-    '}': '}',
-    '[': '[',
-    ']': ']',
-	'(': '(',
-	')': ')',
-    ',': ',',
-    ':': ':',
-	'=': '=',
-	';': ';',
-	'!': '!',
-	"import": "import",
-	"invert": "invert",
-	'debugger': 'debugger',
-	// booleans
-    true: 'true',
-    false: 'false',
-    null: 'null',
-}
-let lexer = moo.compile(grammarObj);
-
+	//console.clear()
+	const lexer = require('./lexer');
+	let log = console.log.bind(console)
 %}
 
 @lexer lexer
@@ -70,23 +11,23 @@ process -> main {% id %}
 	| %space {% d => '' %}
 	| null {% d => '' %}
 
-main -> ( _ (var_assign | log) ):* json {% d => d[1] %}
+main -> ( _ (var_assign) ):* json {% d => d[1] %}
 
 json -> _ (object | array | string | number | boolean) _ {% d => {
 		return d[1][0];
 	} %}
 	| _ myNull _ {% d => null %}
 
-# --------- debugging ---------
-log -> "log" "(" _ value _ ")" _ ";" {% d => { console.log(`>>> ${d[3]}`) } %}
-
 # extract inner content
 html -> %htmlContent
 	{% d => d[0].value %}
 
-varName -> %variable {% d => d[0].value %}
+varName -> %variableName {% d => d[0].value %}
 
-variable -> varName {% d => getValue(d[0]) %}
+variable -> varName {% (d, l, reject) => {
+	if (getValue(d[0]) === undefined) return reject;
+	return getValue(d[0])
+} %}
 
 var_assign
 	-> varName _ "=" _ (
@@ -104,114 +45,132 @@ var_assign
 is -> "is" {% d => "is" %}
 # --------- expressions ---------
 expr
-	-> expression {% arr => eval(arr[0].join('')) %} # executs the result of numberic expressions, @[n, op, n, op, n]
-	| string_concat {% id %}
+	-> string_concat {% id %}
 	#| if {% id %}
 	#| "-" boolean _ %operator _ expr {% d => -Number(d[1]) %}
 
 # --------- conditions ---------
-if -> (variable | expr | string | number | boolean | myNull | condition) _ "?" _ value _ ":" _ value
+than -> "?" {% d => "?" %}
+	| "than" {% d => "?" %}
+
+else -> "else" {% d => ":" %}
+	| ":" {% d => ":" %}
+
+if -> 
+	myNull _ than _ value _ else _ value {% d => d[8] %}
+	| myNull _ than _ value {% d => null %}
+	| (variable | string | number | boolean | condition) _ than _ value _ else _ value
 	{% d => {
-		return d[0][0] ? d[4] : d[8]
+		if (Type.mayBeBoolean(d[0][0]))
+			return d[0][0] ? d[4] : d[8]
+		Type.TypeError('boolean', d[0][0]);
+	}%}
+	| (variable | string | number | boolean | condition) _ than _ value
+	{% d => {
+		if (Type.mayBeBoolean(d[0][0]))
+			return d[0][0] ? d[4] : null
+		Type.TypeError('boolean', d[0][0]);
 	}%}
 
-condition -> conditionalValues _ "==" _ conditionalValues {% d => d[0] == d[4] %}
+condition -> boolean _ "==" _  boolean {% d => d[0] === d[4] %}
+	| string _ "==" _  string {% d => d[0] === d[4] %}
+	| myNull _ "==" _ myNull {% d => d[0] === d[4] %}
+	| array _ "==" _ array {% d => JSON.stringify(d[0]) === JSON.stringify(d[4]) %}
+	| object _ "==" _ object {% d => JSON.stringify(d[0]) === JSON.stringify(d[4]) %}
 
-conditionalValues -> variable {% id %}
-	| (expr | boolean | number | string | myNull) {% d=> d[0][0] %}
+	| boolean _ "!=" _  boolean {% d => d[0] !== d[4] %}
+	| string _ "!=" _  string {% d => d[0] !== d[4] %}
+	| myNull _ "!=" _ myNull {% d => d[0] !== d[4] %}
+	| array _ "!=" _ array {% d => JSON.stringify(d[0]) !== JSON.stringify(d[4]) %}
+	| object _ "!=" _ object {% d => JSON.stringify(d[0]) !== JSON.stringify(d[4]) %}
+
+	# math comparision
+	| number _ "==" _ number {% d => d[0] === d[4] %}
+	| number _ "!=" _ number {% d => d[0] !== d[4] %}
+	| number _ ">" _ number {% d => d[0] > d[4] %}
+	| number _ "<" _ number {% d => d[0] < d[4] %}
+	| number _ ">=" _ number {% d => d[0] >= d[4] %}
+	| number _ "<=" _ number {% d => d[0] <= d[4] %}
+
+	# logical and/or
+	| condition _ %logical_and _ condition {% d => d[0] && d[4] %}
+	| condition _ %logical_or _ condition {% d => d[0] || d[4] %}
+
+	| conditionalValues _ %logical_and _ conditionalValues {% d => d[0] && d[4] %}
+	| condition _ %logical_and _ conditionalValues {% d => d[0] && d[4] %}
+	| conditionalValues _ %logical_and _ condition {% d => d[0] && d[4] %}
+	
+	| conditionalValues _ %logical_or _ conditionalValues {% d => d[0] || d[4] %}
+	| conditionalValues _ %logical_or _ condition {% d => d[0] || d[4] %}
+	| condition _ %logical_or _ conditionalValues {% d => d[0] || d[4] %}
+
+conditionalValues -> (string | number | myNull | array | object | boolean) {% d => d[0][0] %}
+	| "(" _ if _ ")" {% d => d[2] %}
+	| "(" _ conditionalValues _ ")" {% d => d[2] %}
+# --------- hexadecimals ---------
+# ✅
+# --------- numbers ---------
+number -> %number {% d => parseFloat(d[0].value) %}
+	# | "+" variable {% d => Number(d[1])|0 %}
+	# | "-" variable {% d => -Number(d[1])|0 %}
+	# | "+" boolean {% d => Number(d[1]) %}
+	# | "-" boolean {% d => -Number(d[1]) %}
+	| "PI" {% d => 3.1415926536 %}
+	| function {% (d, l, reject) => {
+		if (!Type.isNumber(d[0]))
+			return reject;
+		return d[0];
+	} %}
+	| "(" _ number _ ")" {% d => d[2] %}
+	| variable {% (d, l, reject) => {
+		if (Type.isNumber(d[0]))
+			return d[0]
+		return reject;
+	} %}
+	# | expressionResult {% d => log(1) || (d[0].flat(Infinity).join('_')) %}
+	#(d[0].flat(Infinity).join(''))
 
 # --------- operations ---------
-expression -> # math expressions
-	expression _ %operator _ number {% ([fst, , _, , snd]) => [...fst, _.value, snd] %}
-	| expression _ %operator _ boolean {% ([fst, , _, , snd]) => [...fst, _.value, Number(snd)] %}
-	| expression _ %operator _ variable {% ([fst, , _, , snd], l, reject) => {
-		if (typeof snd != 'number') return reject;
-		return [...fst, _.value, snd] 
-	} %}
-	| number _ %operator _ variable {% ([fst, , _, , snd]) => [fst, _.value, Number(snd)] %}
-	| number _ %operator _ number {% ([fst, , _, , snd]) => [fst, _.value, snd] %}
-	| number _ %operator _ boolean {% ([fst, , _, , snd]) => [fst, _.value, Number(snd)] %}
-	| boolean _ %operator _ number {% ([fst, , _, , snd]) => [Number(fst), _.value, snd] %}
-	| boolean _ %operator _ boolean {% ([fst, , _, , snd]) => [Number(fst), _.value, Number(snd)] %}
-	| boolean _ %operator _ variable {% ([fst, , _, , snd], l, reject) => {
-		if (typeof snd != 'number') return reject;
-		return [Number(fst), _.value, snd] 
-	} %}
-	| variable _ %operator _ boolean {% ([fst, , _, , snd], l, reject) => {
-		if (typeof fst != 'number') return reject;
-		return [fst, _.value, Number(snd)] 
-	} %}
-	| variable _ %operator _ variable {% ([fst, , _, , snd], l, reject) => {
-		if (typeof fst != 'number') {
-			if (typeof snd != 'number') {
-				return reject;
-			}
-		}
-		return [Number(fst), _.value, Number(snd)]
-	} %}
-	| variable _ %operator _ number {% ([fst, , _, , snd], l, reject) => {
-		if (typeof fst != 'number') return reject;
-		return [fst, _.value, snd] 
-	} %}
-
-string_concat
-	-> (string _ "+" _ string
-		| number _ "+" _ string
-		| string _ "+" _ number
-		| boolean _ "+" _ string
-		| string _ "+" _ boolean
-		| string _ "+" _ variable
-		| variable _ "+" _ string
-		#| expr _ "+" _ string
-		#| string _ "+" _ expr
-	) {% ([f]) => f[0] + f[4] %}
-	| expression _ "+" _ string {% d => eval(d[0].join('')) + d[4] %}
-	| expression _ "+" _ variable {% ([fst, , _, , snd], l, reject) => {
-		if (typeof snd != 'string') {
-			return reject;
-		}
-		return eval(fst.join('')) + snd
-	} %}
-	| string_concat _ "+" _ (string | number | boolean | variable) {% d => { return d[0] + d[4] }%}
-	| variable _ "+" _ variable {%
-		([f,,,, s], l, reject) => {
-			if (typeof f == 'string' || typeof s == 'string') {
-				return f + s
-			}
-			return reject;
-		}
-	%}
-	| variable _ "+" _ (string | number | boolean) {%
-		([f,,,, s], l, reject) => {
-			//console.log(f, s)
-			if (typeof f == 'string' || typeof s[0] == 'string') {
-				return f + s[0]
-			}
-			return reject;
-		}
-	%}
-	| string_concat _ "+" _ variable {% d => { return d[0] + d[4] }%}
-
+string_concat -> string _ "+" _ string {% d => d[0] + d[4] %}
 # --------- booleans ---------
 boolean -> 
 	"not" _ %space _ condition {% d => !d[4] %}
 	| is _ %space _ condition {% d => d[4] %}
-	| "!" (variable | number | string | boolean | arrayItem | objectItem) {% (d, l, reject) => {
-		console.log(d)
-		if (!Type.mayBeBoolean(d[1][0]))
-			//Type.TypeError('boolean', Type(d[1]));
-			return reject
-	} %}
-	| "!" "true" {% d => false %} 
-	| "!" "false" {% d => true %}
+	# | "!" (variable | number | string | boolean | myNull) {% (d, l, reject) => {
+	# 	if (!Type.mayBeBoolean(d[1][0]))
+	# 		Type.TypeError('boolean/string/number/null', Type(d[1][0]));
+	# 	return !d[1][0]
+	# } %}
+	# | "!" "true" {% d => false %} 
+	# | "!" "false" {% d => true %}
+	| "!" _ boolean {% d => !d[2] %}
+	| "!" _ "(" _ boolean _ ")" {% d => !d[4] %}
 	| "true" {% d => true %} 
 	| "false" {% d => false %}
-	| "!" "(" _ (boolean | number | string)  _ ")" {% d => console.log(d) && !d[3][0] %}
-	| "!" "(" _ expr _ ")" {% d => console.log(d) && !d[3] %}
-	| "!" "(" _ variable _ ")" {% d =>console.log(d) && !d[3] %}
+	| "(" _ boolean _ ")" {% d => d[2] %}
+	| "(" _ condition _ ")" {% d => d[2] %}
+	| variable {% (d, l, reject) => {
+		if (Type.isBoolean(d[0]))
+			return d[0]
+		return reject;
+	} %}
+	| function {% (d, l, reject) => {
+		if (typeof d[0] !== 'boolean')
+			return reject;
+		return d[0]
+	} %}
+	# | "!" "(" _ (boolean | number | string)  _ ")" {% d => !d[3][0] %}
+	# | "!" "(" _ expr _ ")" {% d => !d[3] %}
+	# | "!" "(" _ variable _ ")" {% d =>!d[3] %}
 
 # --------- nulls ---------
 myNull -> "null" {% d => null %}
+	| "(" _ myNull _ ")" {% d => d[2] %}
+	| variable {% (d, l, reject) => {
+		if (d[0] === null)
+			return null
+		return reject;
+	} %}
 
 # --------- objects ---------
 object -> "{" _ "}" {% function(d) { return {}; } %}
@@ -220,6 +179,11 @@ object -> "{" _ "}" {% function(d) { return {}; } %}
 		if (!(typeof d[0] === 'object' && !Array.isArray(d[0]) && d[0] !== null))
 			return reject;
 		return d[0];
+	} %}
+	| variable {% (d, l, reject) => {
+		if (Type.isObject(d[0]))
+			return d[0]
+		return reject;
 	} %}
 
 objectItem -> (object | variable | arrayItem | objectItem) _ "[" _ (string | variable) _ "]" {% (d, l, reject) => {
@@ -249,6 +213,11 @@ array -> "[" _ "]" {% function(d) { return []; } %}
 		if (!Array.isArray(d[0])) return reject;
 		return d[0];
 	} %}
+	| variable {% (d, l, reject) => {
+		if (Type.isArray(d[0]))
+			return d[0]
+		return reject;
+	} %}
 
 arrayItem -> (array | variable | arrayItem | objectItem) _ "[" _ (number | variable) _ "]" {% (d, l, reject) => {
 		let f = d[0][0];
@@ -259,9 +228,20 @@ arrayItem -> (array | variable | arrayItem | objectItem) _ "[" _ (number | varia
 	}
 %}
 
+# --------- functions ---------
+function -> %functionName arguments {% d => {
+	if (!functions[d[0]])
+		Type.Error('Function is not defined.')
+	return functions[d[0]](...d[1]);
+} %}
+
+arguments -> "(" _ ")" {% d => [] %}
+	| "(" _ value (_ "," _ value):* (_ ","):? _ ")" {% d => extractArray(d) %}
+
 # --------- values ---------
 value ->
-	if {% id %}
+	"(" _ value _ ")" {% d => d[2] %}
+	| if {% id %}
 	| html {% id %}
 	| condition {% id %}
 	| boolean {% id %}
@@ -274,66 +254,33 @@ value ->
     | string {% id %}
 	| hex {% id %}
 	| expr {% id %}
-	| variable {% id %}
-    # | "true" {% function(d) { return true; } %}
-    # | "false" {% function(d) { return false; } %}
-    # | "null" {% function(d) { return null; } %}
-	
-# --------- numbers ---------
-number -> %number {% d => parseFloat(d[0].value) %}
-	| "+" variable {% d => Number(d[1]) %}
-	| "-" variable {% d => -Number(d[1]) %}
-	| "+" boolean {% d => Number(d[1]) %}
-	| "-" boolean {% d => -Number(d[1]) %}
-	| random {% id %}
-	| length {% id %}
+    | myNull {% d => null %}
 
-random -> "random" "(" _ ")" {% d => +Math.random().toFixed(2) %}
-	| "random" "(" _ number _ ")" {% d => Math.floor(Math.random() * d[3]) %}
-	| "random" "(" _ number _ "," _ number _ ")" {% d=> Math.floor(Math.random() * (d[7] - d[3]) + d[3]) %}
-
-length -> "length" "(" _ (array | object) _ ")" {% d => Object.keys(d[3][0]).length %}
-	| "length" "(" _ variable _ ")" {% d => {
-		let v = d[3];
-		if (!Array.isArray(v) || (v && typeof v === 'object' && !(v instanceof Array))) {
-			console.warn(
-				new Error('[length()]: Argument #1 must be type of Array or Object, got ' + v + ' instead.')
-			);
-			return;
-		}
-		return Object.keys(v).length
-	} %}
-
-# --------- hexadecimals ---------
-invert -> "invert" "(" _ (%hexLong | %hexShort) _ ")" {% d => invertHex(d[3][0].value) %}
-	| "invert" "(" _ variable _ ")" {% d => {
-		if (!/#[A-Za-z0-9]{3}/.test(d[3]) && !/#[A-Za-z0-9]{6}/.test(d[3])) {
-			console.warn(
-				new Error('[join()]: Argument #1 must be type of Array, got ' + d[3] + ' instead.')
-			);
-			return;
-		}
-		return invertHex(d[3]);
-	} %}
 hex -> %hexLong {% d => d[0].value %}
 	| %hexShort {% d => d[0].value %}
-	| invert {% id %}
+	| "(" _ hex _ ")" {% d => d[2] %}
+	| variable {% (d, l, reject) => {
+		if (Type.isHex(d[0]))
+			return d[0]
+		return reject;
+	} %}
 
 # --------- strings ---------
-string -> "join" "(" _ array _ ("," _ string _):? ")" {% d => d[3].join(!d[5] ? ',' : d[5][2]) %}
-	| "join" "(" _ variable _ ("," _ string _):? ")"
-		{% d => {
-			return Array.isArray(d[3])
-			? d[3].join(!d[5] ? ',' : d[5][2])
-			: console.warn(
-				new Error('[join()]: Argument #1 must be type of Array, got ' + d[3] + ' instead.')
-			) } %}
-	| %dstring {% function(d) { return JSON.parse(d[0].value) } %}
-	| %sstring {% function(d) { return JSON.parse(d[0].value) } %}
-	| %tstring {% function(d) {
-		return d[0].value
-	} %}
+string -> %dstring {% d => d[0].value %}
+	| %sstring {% d => d[0].value %}
+	| %tstring {% d => d[0].value %}
 	| hex {% id %}
+	| function {% (d, l, reject) => {
+		if (!Type.isString(d[0]))
+			return reject;
+		return d[0];
+	} %}
+	| "(" _ string _ ")" {% d => d[2] %}
+	| variable {% (d, l, reject) => {
+		if (Type.isString(d[0]))
+			return d[0]
+		return reject;
+	} %}
 
 # --------- whitespace ---------
 WS -> null | %space {% d => null %}
@@ -357,7 +304,7 @@ file -> string {% function(d, l, reject) {
 		let res = l;
 		try {
 			if (request.status === 200) {
-				console.log(request.responseText);
+				log(request.responseText);
 				return JSON.parse(request.responseText);
 			} else {
 				throw 'Resource not found'
@@ -370,7 +317,6 @@ file -> string {% function(d, l, reject) {
 	if (/\.next$/.test(d[0])) {
 		let read = readFile(d[0]).trim()
 		//let res = require('./parser.js')(read)
-		debugger
 		return {}//JSON.parse(res);
 	} else */
 	// for now only json files are supported
@@ -379,7 +325,7 @@ file -> string {% function(d, l, reject) {
 		return JSON.parse(read.trim());
 	}
 	else {
-		console.warn(`File ${d[0]} is not found.`)
+		console.warn(`  File ${d[0]} is not found.`)
 		return l
 	}
 } %}
@@ -388,57 +334,151 @@ file -> string {% function(d, l, reject) {
 
 //const $this = {};
 const fs = require('fs');
-//const sp = require('sync-promise');
-let variables = {};
-//$this.variables = variables;
-
-function Type(item) {
-	switch (typeof item) {
-		case 'string':
-			return 'string';
-		case 'number':
-			return 'number';
-		case 'boolean':
-			return 'boolean';
-		case 'undefined':
-			//throw new Error(`${item} is not defined`);
-			return 'undefined';
-		case 'object':
-			if (Array.isArray(item))
-				return 'array';
-			if (item === null)
-				return 'null';
-			return 'object';
+const required = (functionName, argumentName, item, type) => {
+	if (Type.isUndefined(item)) {
+		Type.ArgumentError(`"${argumentName}" is required for "${functionName}" function, but none is provided.`);
+	}
+	else if (type && type != 'any') {
+		if (typeof type === 'string' && Type(item) !== type
+		|| Array.isArray(type) && !type.includes(Type(item)))
+		Type.ArgumentError(`"${argumentName}" at "${functionName}()" must be typeof "${typeof type === 'string' ? type : type.join('/')}", got "${Type(item)}" instead.`);
 	}
 }
-Type.isArray = (item) => {
-	return Type(item) === 'array'
-}
-Type.isNumber = (item) => {
-	return Type(item) === 'number'
-}
-Type.isBoolean = (item) => {
-	return Type(item) === 'boolean'
-}
-Type.isObject = (item) => {
-	return Type(item) === 'object'
-}
-Type.isString = (item) => {
-	return Type(item) === 'string'
-}
-Type.isNull = (item) => {
-	return Type(item) === 'null'
-}
-Type.isUndefined = (item) => {
-	return Type(item) === 'undefined'
-}
-Type.TypeError = (expectedType, recieved) => {
-	throw new TypeError(`Unexpected input type. Expecteg "${expectedType}", recieved "${recieved}".`);
-}
-Type.mayBeBoolean = item => {
-	let type = Type(item)
-	return ['string', 'number', 'boolean'].includes(type)
-}
+const variables = {};
+const functions = {
+	error (message) {
+		required('error', 'message', message, 'any');
+		console.error('>>> ' + message)
+		return message
+	},
+	log (message) {
+		required('log', 'message', message, 'any');
+		log('>>> ' + message)
+		return message
+	},
+	len (array) {
+		required('len', 'array', array, 'array');
+	},
+	sqrt (number) {
+		required('sqrt', 'First argument', number, 'number');
+		return Math.sqrt(number)
+	},
+	pow (x, y) {
+		required('pow', 'First argument', x, 'number');
+		required('pow', 'Second argument', y, 'number');
+		return Math.pow(x, y)
+	},
+	length (item) {
+		required('length', 'First argument', item, ['array', 'object', 'string']);
+		if (Type.isString(item))
+			return item.length;
+		else {
+			return Object.keys(item).length
+		}
+
+	},
+	join (args, separator) {
+		required('join', 'First argument', args, 'array');
+		if (args.length === 0)
+			return '';
+		let result = '';
+		args.map(i => functions.String(i));
+		return args.join(
+			separator !== undefined ? functions.String(separator)
+				: undefined
+		)
+	},
+	random (min, max) {
+		if (min === undefined) {
+			return +Math.random().toFixed(2)
+		} else if (max === undefined) {
+			// max = min
+			return ~~(Math.random() * min)
+		} else {
+			if (min > max)
+				return 0;
+			return ~~(Math.random() * (max - min) + min)
+		}
+	},
+	String (item) {
+		required('String', 'At least one argument', item)
+		switch (Type(item)) {
+			case 'object':
+				return 'object';
+			case 'array':
+				return 'array';
+			default:
+				return item + '';
+		}
+	},
+	Number (item) {
+		required('Number', 'At least one argument', item)
+		return (item)|0 // bitwise | turn anything inside the () into a number
+	},
+	abs (number) {
+		required('abs', 'First argument', number, 'number')
+		return Math.abs(number) // bitwise | turn anything inside the () into a number
+	},
+	invert (hex) {
+		required('invert', 'First argument', hex, 'hex')
+		return invertHex(hex);
+	},
+	round (number) {
+		required('round', 'First argument', number, 'number')
+		return Math.round(number)
+	},
+	sum (first, second, ...rest) {
+		required('sum', 'First argument', first, 'number');
+		required('sum', 'Second argument', second, 'number');
+		for (let i = 0; i < rest.length; i++) {
+			let j = rest[i];
+			required('sum', 'All arguments', j, 'number');
+			if (j < 0) rest[i] = '(' + rest[i] + ')'
+		}
+		return eval(`(${first})+(${second})+${rest.length ? rest.join('+') : 0}`);
+	},
+	reduce (first, second, ...rest) {
+		required('sum', 'First argument', first, 'number');
+		required('sum', 'Second argument', second, 'number');
+		for (let i = 0; i < rest.length; i++) {
+			let j = rest[i];
+			required('sum', 'All arguments', j, 'number');
+			if (j < 0) rest[i] = '(' + rest[i] + ')'
+		}
+		return eval(`(${first})-(${second})-${rest.length ? rest.join('-') : 0}`);
+	},
+	multiply (first, second, ...rest) {
+		required('sum', 'First argument', first, 'number');
+		required('sum', 'Second argument', second, 'number');
+		for (let i = 0; i < rest.length; i++) {
+			let j = rest[i];
+			required('sum', 'All arguments', j, 'number');
+			if (j < 0) rest[i] = '(' + rest[i] + ')'
+		}
+		return eval(`(${first})*(${second})*${rest.length ? rest.join('*') : 1}`);
+	},
+	divide (first, second, ...rest) {
+		required('sum', 'First argument', first, 'number');
+		required('sum', 'Second argument', second, 'number');
+		if (second === 0)
+			Type.ArgumentError(`Function "divide" may accept only the first argument with a value 0.`);
+		for (let i = 0; i < rest.length; i++) {
+			let j = rest[i];
+			required('sum', 'All arguments', j, 'number');
+			if (j === 0)
+				Type.ArgumentError(`Function "divide()" may accept value 0 only for the first argument.`);
+			if (j < 0) rest[i] = '(' + rest[i] + ')'
+		}
+		return eval(`(${first})/(${second})/${rest.length ? rest.join('/') : 1}`);
+	},
+	isNull (item) {
+		required('isNull', 'At least one argument', item);
+		return item === null;
+	}
+};
+//$this.variables = variables;
+
+const Type = require('./Type')
 
 function storeVariable (varName, value) {
 	variables[varName] = value;
@@ -452,9 +492,9 @@ function getValue(varName) {
 	if (varName in variables) {
 		return variables[varName]
 	}
-	// console.warn(new Error(`${varName} is not defined. undefined is returned instead.`))
-	variables[varName] = undefined;
-	return undefined;
+	//console.warn(new Error(`${varName} is not defined. undefined is returned instead.`))
+	//variables[varName] = undefined;
+	//return undefined;
 }
 function extractPair(kv, output) {
     if(kv[0]) { output[kv[0]] = kv[1]; }
