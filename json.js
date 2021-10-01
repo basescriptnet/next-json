@@ -236,6 +236,7 @@ var grammar = {
     {"name": "json$subexpression$1", "symbols": ["string"]},
     {"name": "json$subexpression$1", "symbols": ["number"]},
     {"name": "json$subexpression$1", "symbols": ["boolean"]},
+    {"name": "json$subexpression$1", "symbols": ["if"]},
     {"name": "json", "symbols": ["_", "json$subexpression$1", "_"], "postprocess":  d => {
         	return d[1][0];
         } },
@@ -263,7 +264,6 @@ var grammar = {
         	return d[4][0];
         } },
     {"name": "is", "symbols": [{"literal":"is"}], "postprocess": d => "is"},
-    {"name": "expr", "symbols": ["string_concat"], "postprocess": id},
     {"name": "than", "symbols": [{"literal":"?"}], "postprocess": d => "?"},
     {"name": "than", "symbols": [{"literal":"than"}], "postprocess": d => "?"},
     {"name": "else", "symbols": [{"literal":"else"}], "postprocess": d => ":"},
@@ -275,20 +275,28 @@ var grammar = {
     {"name": "if$subexpression$1", "symbols": ["number"]},
     {"name": "if$subexpression$1", "symbols": ["boolean"]},
     {"name": "if$subexpression$1", "symbols": ["condition"]},
+    {"name": "if$subexpression$1", "symbols": ["object"]},
+    {"name": "if$subexpression$1", "symbols": ["array"]},
     {"name": "if", "symbols": ["if$subexpression$1", "_", "than", "_", "value", "_", "else", "_", "value"], "postprocess":  d => {
         	if (Type.mayBeBoolean(d[0][0]))
         		return d[0][0] ? d[4] : d[8]
-        	Type.TypeError('boolean', d[0][0]);
+        	else if (Type.isObject(d[0][0]) || Type.isArray(d[0][0]))
+        		return d[4]
+        	Type.TypeError('boolean convertable', d[0][0]);
         }},
     {"name": "if$subexpression$2", "symbols": ["variable"]},
     {"name": "if$subexpression$2", "symbols": ["string"]},
     {"name": "if$subexpression$2", "symbols": ["number"]},
     {"name": "if$subexpression$2", "symbols": ["boolean"]},
-    {"name": "if$subexpression$2", "symbols": ["condition"]},
+    {"name": "if$subexpression$2", "symbols": ["ondition"]},
+    {"name": "if$subexpression$2", "symbols": ["object"]},
+    {"name": "if$subexpression$2", "symbols": ["array"]},
     {"name": "if", "symbols": ["if$subexpression$2", "_", "than", "_", "value"], "postprocess":  d => {
         	if (Type.mayBeBoolean(d[0][0]))
         		return d[0][0] ? d[4] : null
-        	Type.TypeError('boolean', d[0][0]);
+        	else if (Type.isObject(d[0][0]) || Type.isArray(d[0][0]))
+        		return d[4]
+        	Type.TypeError('boolean convertable', d[0][0]);
         }},
     {"name": "condition", "symbols": ["boolean", "_", {"literal":"=="}, "_", "boolean"], "postprocess": d => d[0] === d[4]},
     {"name": "condition", "symbols": ["string", "_", {"literal":"=="}, "_", "string"], "postprocess": d => d[0] === d[4]},
@@ -459,7 +467,6 @@ var grammar = {
     {"name": "value", "symbols": ["number"], "postprocess": id},
     {"name": "value", "symbols": ["string"], "postprocess": id},
     {"name": "value", "symbols": ["hex"], "postprocess": id},
-    {"name": "value", "symbols": ["expr"], "postprocess": id},
     {"name": "value", "symbols": ["myNull"], "postprocess": d => null},
     {"name": "hex", "symbols": [(lexer.has("hexLong") ? {type: "hexLong"} : hexLong)], "postprocess": d => d[0].value},
     {"name": "hex", "symbols": [(lexer.has("hexShort") ? {type: "hexShort"} : hexShort)], "postprocess": d => d[0].value},
@@ -484,6 +491,7 @@ var grammar = {
         		return d[0]
         	return reject;
         } },
+    {"name": "string", "symbols": ["string_concat"], "postprocess": id},
     {"name": "WS", "symbols": []},
     {"name": "WS", "symbols": [(lexer.has("space") ? {type: "space"} : space)], "postprocess": d => null},
     {"name": "_$ebnf$1", "symbols": []},

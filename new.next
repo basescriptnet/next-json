@@ -1,4 +1,6 @@
-$z = 0;
-{
-    c2: !isNull($z) than 1 else 10
-}
+$z = {a: {}};
+$v = $z ? $z
+// comment
+: {};
+$v
+// add Boolean, Array, Object, Null, Hex functions for all data types

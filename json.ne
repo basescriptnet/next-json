@@ -13,7 +13,7 @@ process -> main {% id %}
 
 main -> ( _ (var_assign) ):* json {% d => d[1] %}
 
-json -> _ (object | array | string | number | boolean) _ {% d => {
+json -> _ (object | array | string | number | boolean | if) _ {% d => {
 		return d[1][0];
 	} %}
 	| _ myNull _ {% d => null %}
@@ -44,10 +44,8 @@ var_assign
 
 is -> "is" {% d => "is" %}
 # --------- expressions ---------
-expr
-	-> string_concat {% id %}
-	#| if {% id %}
-	#| "-" boolean _ %operator _ expr {% d => -Number(d[1]) %}
+# expr
+# 	-> string_concat {% id %}
 
 # --------- conditions ---------
 than -> "?" {% d => "?" %}
@@ -59,17 +57,21 @@ else -> "else" {% d => ":" %}
 if -> 
 	myNull _ than _ value _ else _ value {% d => d[8] %}
 	| myNull _ than _ value {% d => null %}
-	| (variable | string | number | boolean | condition) _ than _ value _ else _ value
+	| (variable | string | number | boolean | condition | object | array) _ than _ value _ else _ value
 	{% d => {
 		if (Type.mayBeBoolean(d[0][0]))
 			return d[0][0] ? d[4] : d[8]
-		Type.TypeError('boolean', d[0][0]);
+		else if (Type.isObject(d[0][0]) || Type.isArray(d[0][0]))
+			return d[4]
+		Type.TypeError('boolean convertable', d[0][0]);
 	}%}
-	| (variable | string | number | boolean | condition) _ than _ value
+	| (variable | string | number | boolean | ondition | object | array) _ than _ value
 	{% d => {
 		if (Type.mayBeBoolean(d[0][0]))
 			return d[0][0] ? d[4] : null
-		Type.TypeError('boolean', d[0][0]);
+		else if (Type.isObject(d[0][0]) || Type.isArray(d[0][0]))
+			return d[4]
+		Type.TypeError('boolean convertable', d[0][0]);
 	}%}
 
 condition -> boolean _ "==" _  boolean {% d => d[0] === d[4] %}
@@ -136,13 +138,6 @@ string_concat -> string _ "+" _ string {% d => d[0] + d[4] %}
 boolean -> 
 	"not" _ %space _ condition {% d => !d[4] %}
 	| is _ %space _ condition {% d => d[4] %}
-	# | "!" (variable | number | string | boolean | myNull) {% (d, l, reject) => {
-	# 	if (!Type.mayBeBoolean(d[1][0]))
-	# 		Type.TypeError('boolean/string/number/null', Type(d[1][0]));
-	# 	return !d[1][0]
-	# } %}
-	# | "!" "true" {% d => false %} 
-	# | "!" "false" {% d => true %}
 	| "!" _ boolean {% d => !d[2] %}
 	| "!" _ "(" _ boolean _ ")" {% d => !d[4] %}
 	| "true" {% d => true %} 
@@ -159,9 +154,6 @@ boolean ->
 			return reject;
 		return d[0]
 	} %}
-	# | "!" "(" _ (boolean | number | string)  _ ")" {% d => !d[3][0] %}
-	# | "!" "(" _ expr _ ")" {% d => !d[3] %}
-	# | "!" "(" _ variable _ ")" {% d =>!d[3] %}
 
 # --------- nulls ---------
 myNull -> "null" {% d => null %}
@@ -253,7 +245,7 @@ value ->
     | number {% id %}
     | string {% id %}
 	| hex {% id %}
-	| expr {% id %}
+	# | expr {% id %}
     | myNull {% d => null %}
 
 hex -> %hexLong {% d => d[0].value %}
@@ -281,6 +273,7 @@ string -> %dstring {% d => d[0].value %}
 			return d[0]
 		return reject;
 	} %}
+	| string_concat {% id %}
 
 # --------- whitespace ---------
 WS -> null | %space {% d => null %}
