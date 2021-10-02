@@ -9,7 +9,6 @@ function id(x) { return x[0]; }
 
 
 
-//const $this = {};
 const fs = require('fs');
 const required = (functionName, argumentName, item, type) => {
 	if (Type.isUndefined(item)) {
@@ -21,21 +20,40 @@ const required = (functionName, argumentName, item, type) => {
 		Type.ArgumentError(`"${argumentName}" at "${functionName}()" must be typeof "${typeof type === 'string' ? type : type.join('/')}", got "${Type(item)}" instead.`);
 	}
 }
-const variables = {};
+const localVariables = {};
+const variables = {
+	$this: null
+};
 const functions = {
+	// debugging
 	error (message) {
-		required('error', 'message', message, 'any');
+		required('error', 'message', message);
 		console.error('>>> ' + message)
 		return message
 	},
 	log (message) {
-		required('log', 'message', message, 'any');
+		required('log', 'message', message);
 		log('>>> ' + message)
 		return message
 	},
-	len (array) {
-		required('len', 'array', array, 'array');
+	// array <=> string
+	join (args, separator) {
+		required('join', 'First argument', args, 'array');
+		if (args.length === 0)
+			return '';
+		let result = '';
+		args.map(i => functions.String(i));
+		return args.join(
+			separator !== undefined ? functions.String(separator)
+				: undefined
+		)
 	},
+	split (string, separator = '') {
+		required('split', 'First argument', string, 'string');
+		required('split', 'Second argument', separator, 'string');
+		return string.split(separator)
+	},
+	// math operations
 	sqrt (number) {
 		required('sqrt', 'First argument', number, 'number');
 		return Math.sqrt(number)
@@ -54,17 +72,6 @@ const functions = {
 		}
 
 	},
-	join (args, separator) {
-		required('join', 'First argument', args, 'array');
-		if (args.length === 0)
-			return '';
-		let result = '';
-		args.map(i => functions.String(i));
-		return args.join(
-			separator !== undefined ? functions.String(separator)
-				: undefined
-		)
-	},
 	random (min, max) {
 		if (min === undefined) {
 			return +Math.random().toFixed(2)
@@ -76,21 +83,6 @@ const functions = {
 				return 0;
 			return ~~(Math.random() * (max - min) + min)
 		}
-	},
-	String (item) {
-		required('String', 'At least one argument', item)
-		switch (Type(item)) {
-			case 'object':
-				return 'object';
-			case 'array':
-				return 'array';
-			default:
-				return item + '';
-		}
-	},
-	Number (item) {
-		required('Number', 'At least one argument', item)
-		return (item)|0 // bitwise | turn anything inside the () into a number
 	},
 	abs (number) {
 		required('abs', 'First argument', number, 'number')
@@ -148,9 +140,129 @@ const functions = {
 		}
 		return eval(`(${first})/(${second})/${rest.length ? rest.join('/') : 1}`);
 	},
+	// type convert
+	String (item) {
+		required('String', 'At least one argument', item)
+		switch (Type(item)) {
+			case 'object':
+			case 'array':
+				return JSON.stringify(item);
+			default:
+				return item + '';
+		}
+	},
+	Number (item) {
+		required('Number', 'At least one argument', item)
+		return (item)|0 // bitwise | turn anything inside the () into a number
+	},
+	Boolean (item) {
+		required('Boolean', 'At least one argument', item)
+		return !!item
+	},
+	Array (item) {
+		required('Array', 'At least one argument', item)
+		switch (Type(item)) {
+			case 'string':
+				return item.split('');
+			case 'object':
+				return Object.values(item);
+			/*case 'number':
+			case 'null':
+			case 'boolean':
+			case 'hex':
+			case 'array':*/
+			default:
+				return [item];
+		}
+		return []
+	},
+	Object (item) {
+		required('Object', 'At least one argument', item)
+		let key = Type(item);
+		if (key === 'string')
+		try {
+			return JSON.parse(item)
+		} catch (err) {}
+		let obj = {}
+		obj[key] = item
+		return obj;
+	},
+	// type check
+	isNumber (item) {
+		required('isNumber', 'At least one argument', item);
+		return Type(item) == 'number'
+	},
+	isString (item) {
+		required('isString', 'At least one argument', item);
+		return Type(item) == 'string' || Type(item) == 'hex'
+	},
+	isArray (item) {
+		required('isArray', 'At least one argument', item);
+		return Type(item) == 'array'
+	},
 	isNull (item) {
 		required('isNull', 'At least one argument', item);
 		return item === null;
+	},
+	isHex (item) {
+		required('isHex', 'At least one argument', item);
+		return Type(item) == 'hex';
+	},
+	// array/object interactions
+	push (array, ...rest) {
+		required('push', 'First argument', array, 'array');
+		if (rest.length)
+			for (let i = 0; i < rest.length; i++) {
+				let j = rest[i];
+				array.push(j);
+			}
+		else array.push(null)
+		return array;
+	},
+	insert (target, insertable) {
+		required('insert', 'First argument', target, ['object', 'array']);
+		if (Type.isObject(target)) {
+			required('insert', 'Second argument', insertable, 'object');
+			return Object.assign(target, insertable);
+		} else {
+			required('insert', 'Second argument', insertable, 'array');
+			return [...target, ...insertable];
+		}
+	},
+	slice (target, start, end) {
+		required('slice', 'First argument', target, ['array', 'string']);
+		required('slice', 'Second argument', start, 'number');
+		if (end === undefined) end = target.length
+		else if (typeof end !== 'number') {
+			required('slice', 'Third argument', end, 'number');
+		}
+		let result = null;
+		return target.slice(start, end)
+	},
+	remove (target, item) {
+		required('remove', 'First argument', target, ['string', 'object', 'array']);
+		let result = null;
+		if (Type.isObject(target)) {
+			required('remove', 'Second argument', item, 'string');
+			result = target[item]
+			delete target[item];
+		}
+		else {
+			required('remove', 'Second argument', item, 'number');
+			if (Type.isArray(target)) {
+				result = target.splice(item, 1)[0]
+			} else {
+				result = target.split('').splice(item, 1).join('')
+			}
+		}
+		return result === undefined ? null : result;
+	},
+	reverse (target) {
+		required('remove', 'First argument', target, ['string', 'array']);
+		if (Type.isString(target)) {
+			return target.split('').reverse().join('')
+		}
+		return target.reverse()
 	}
 };
 //$this.variables = variables;
@@ -159,6 +271,7 @@ const Type = require('./Type')
 
 function storeVariable (varName, value) {
 	variables[varName] = value;
+	return varName
 }
 
 function getArrayItem(item) {
@@ -240,6 +353,7 @@ var grammar = {
     {"name": "json", "symbols": ["_", "json$subexpression$1", "_"], "postprocess":  d => {
         	return d[1][0];
         } },
+    {"name": "json", "symbols": [{"literal":"("}, "_", "json", "_", {"literal":")"}], "postprocess": d => d[2]},
     {"name": "json", "symbols": ["_", "myNull", "_"], "postprocess": d => null},
     {"name": "html", "symbols": [(lexer.has("htmlContent") ? {type: "htmlContent"} : htmlContent)], "postprocess": d => d[0].value},
     {"name": "varName", "symbols": [(lexer.has("variableName") ? {type: "variableName"} : variableName)], "postprocess": d => d[0].value},
@@ -247,18 +361,16 @@ var grammar = {
         	if (getValue(d[0]) === undefined) return reject;
         	return getValue(d[0])
         } },
+    {"name": "variable", "symbols": [{"literal":"("}, "_", "variable", "_", {"literal":")"}], "postprocess": d => d[2]},
     {"name": "var_assign$subexpression$1", "symbols": ["if"]},
     {"name": "var_assign$subexpression$1", "symbols": ["import"]},
-    {"name": "var_assign$subexpression$1", "symbols": ["expr"]},
     {"name": "var_assign$subexpression$1", "symbols": ["string"]},
     {"name": "var_assign$subexpression$1", "symbols": ["number"]},
-    {"name": "var_assign$subexpression$1", "symbols": ["variable"]},
+    {"name": "var_assign$subexpression$1", "symbols": ["html"]},
     {"name": "var_assign$subexpression$1", "symbols": ["boolean"]},
     {"name": "var_assign$subexpression$1", "symbols": ["object"]},
     {"name": "var_assign$subexpression$1", "symbols": ["array"]},
     {"name": "var_assign$subexpression$1", "symbols": ["myNull"]},
-    {"name": "var_assign$subexpression$1", "symbols": ["html"]},
-    {"name": "var_assign$subexpression$1", "symbols": ["arrayItem"]},
     {"name": "var_assign", "symbols": ["varName", "_", {"literal":"="}, "_", "var_assign$subexpression$1", "_", {"literal":";"}], "postprocess":  function(d) {
         	storeVariable(d[0], d[4][0]);
         	return d[4][0];
@@ -333,16 +445,15 @@ var grammar = {
     {"name": "conditionalValues", "symbols": [{"literal":"("}, "_", "conditionalValues", "_", {"literal":")"}], "postprocess": d => d[2]},
     {"name": "number", "symbols": [(lexer.has("number") ? {type: "number"} : number)], "postprocess": d => parseFloat(d[0].value)},
     {"name": "number", "symbols": [{"literal":"PI"}], "postprocess": d => 3.1415926536},
-    {"name": "number", "symbols": ["function"], "postprocess":  (d, l, reject) => {
-        	if (!Type.isNumber(d[0]))
+    {"name": "number", "symbols": [{"literal":"E"}], "postprocess": d => 2.7182818285},
+    {"name": "number$subexpression$1", "symbols": ["objectItem"]},
+    {"name": "number$subexpression$1", "symbols": ["arrayItem"]},
+    {"name": "number$subexpression$1", "symbols": ["variable"]},
+    {"name": "number$subexpression$1", "symbols": ["function"]},
+    {"name": "number", "symbols": ["number$subexpression$1"], "postprocess":  (d, l, reject) => {
+        	if (!Type.isNumber(d[0][0]))
         		return reject;
-        	return d[0];
-        } },
-    {"name": "number", "symbols": [{"literal":"("}, "_", "number", "_", {"literal":")"}], "postprocess": d => d[2]},
-    {"name": "number", "symbols": ["variable"], "postprocess":  (d, l, reject) => {
-        	if (Type.isNumber(d[0]))
-        		return d[0]
-        	return reject;
+        	return d[0][0];
         } },
     {"name": "string_concat", "symbols": ["string", "_", {"literal":"+"}, "_", "string"], "postprocess": d => d[0] + d[4]},
     {"name": "boolean", "symbols": [{"literal":"not"}, "_", (lexer.has("space") ? {type: "space"} : space), "_", "condition"], "postprocess": d => !d[4]},
@@ -365,10 +476,14 @@ var grammar = {
         } },
     {"name": "myNull", "symbols": [{"literal":"null"}], "postprocess": d => null},
     {"name": "myNull", "symbols": [{"literal":"("}, "_", "myNull", "_", {"literal":")"}], "postprocess": d => d[2]},
-    {"name": "myNull", "symbols": ["variable"], "postprocess":  (d, l, reject) => {
-        	if (d[0] === null)
-        		return null
-        	return reject;
+    {"name": "myNull$subexpression$1", "symbols": ["objectItem"]},
+    {"name": "myNull$subexpression$1", "symbols": ["arrayItem"]},
+    {"name": "myNull$subexpression$1", "symbols": ["variable"]},
+    {"name": "myNull$subexpression$1", "symbols": ["function"]},
+    {"name": "myNull", "symbols": ["myNull$subexpression$1"], "postprocess":  (d, l, reject) => {
+        	if (!Type.isNull(d[0][0]))
+        		return reject;
+        	return d[0][0];
         } },
     {"name": "object", "symbols": [{"literal":"{"}, "_", {"literal":"}"}], "postprocess": function(d) { return {}; }},
     {"name": "object$ebnf$1", "symbols": []},
@@ -378,32 +493,19 @@ var grammar = {
     {"name": "object$ebnf$2", "symbols": ["object$ebnf$2$subexpression$1"], "postprocess": id},
     {"name": "object$ebnf$2", "symbols": [], "postprocess": function(d) {return null;}},
     {"name": "object", "symbols": [{"literal":"{"}, "_", "pair", "object$ebnf$1", "object$ebnf$2", "_", {"literal":"}"}], "postprocess": extractObject},
-    {"name": "object", "symbols": ["objectItem"], "postprocess":  (d, l, reject) => {
-        	if (!(typeof d[0] === 'object' && !Array.isArray(d[0]) && d[0] !== null))
+    {"name": "object$subexpression$1", "symbols": ["objectItem"]},
+    {"name": "object$subexpression$1", "symbols": ["arrayItem"]},
+    {"name": "object$subexpression$1", "symbols": ["variable"]},
+    {"name": "object$subexpression$1", "symbols": ["function"]},
+    {"name": "object", "symbols": ["object$subexpression$1"], "postprocess":  (d, l, reject) => {
+        	if (!Type.isObject(d[0][0]))
         		return reject;
-        	return d[0];
+        	return d[0][0];
         } },
-    {"name": "object", "symbols": ["variable"], "postprocess":  (d, l, reject) => {
-        	if (Type.isObject(d[0]))
-        		return d[0]
-        	return reject;
-        } },
-    {"name": "objectItem$subexpression$1", "symbols": ["object"]},
-    {"name": "objectItem$subexpression$1", "symbols": ["variable"]},
-    {"name": "objectItem$subexpression$1", "symbols": ["arrayItem"]},
-    {"name": "objectItem$subexpression$1", "symbols": ["objectItem"]},
-    {"name": "objectItem$subexpression$2", "symbols": ["string"]},
-    {"name": "objectItem$subexpression$2", "symbols": ["variable"]},
-    {"name": "objectItem", "symbols": ["objectItem$subexpression$1", "_", {"literal":"["}, "_", "objectItem$subexpression$2", "_", {"literal":"]"}], "postprocess":  (d, l, reject) => {
-        	let f = d[0][0];
-        	let s = d[4][0];
-        	if (typeof s != 'string') return reject;
-        	if (!(typeof d[0][0] === 'object' && !Array.isArray(d[0][0]) && d[0][0] !== null))
-        		return reject;
-        	let item = getArrayItem(f[s]);
-        	if (!(typeof item === 'object' && !Array.isArray(item) && item !== null))
-        		return reject;
-        	return item;
+    {"name": "objectItem", "symbols": ["object", "_", {"literal":"["}, "_", "string", "_", {"literal":"]"}], "postprocess":  (d, l, reject) => {
+        	let f = d[0];
+        	let s = d[4];
+        	return getArrayItem(f[s]);
         }
         },
     {"name": "pair", "symbols": ["key", "_", {"literal":":"}, "_", "value"], "postprocess": d => [d[0], d[4]]},
@@ -418,33 +520,80 @@ var grammar = {
     {"name": "array$ebnf$2", "symbols": ["array$ebnf$2$subexpression$1"], "postprocess": id},
     {"name": "array$ebnf$2", "symbols": [], "postprocess": function(d) {return null;}},
     {"name": "array", "symbols": [{"literal":"["}, "_", "value", "array$ebnf$1", "array$ebnf$2", "_", {"literal":"]"}], "postprocess": extractArray},
-    {"name": "array", "symbols": ["arrayItem"], "postprocess":  (d, l, reject) => {
-        	if (!Array.isArray(d[0])) return reject;
-        	return d[0];
+    {"name": "array$subexpression$1", "symbols": ["objectItem"]},
+    {"name": "array$subexpression$1", "symbols": ["arrayItem"]},
+    {"name": "array$subexpression$1", "symbols": ["variable"]},
+    {"name": "array$subexpression$1", "symbols": ["function"]},
+    {"name": "array", "symbols": ["array$subexpression$1"], "postprocess":  (d, l, reject) => {
+        	if (!Type.isArray(d[0][0]))
+        		return reject;
+        	return d[0][0];
         } },
-    {"name": "array", "symbols": ["variable"], "postprocess":  (d, l, reject) => {
-        	if (Type.isArray(d[0]))
-        		return d[0]
-        	return reject;
-        } },
-    {"name": "arrayItem$subexpression$1", "symbols": ["array"]},
-    {"name": "arrayItem$subexpression$1", "symbols": ["variable"]},
-    {"name": "arrayItem$subexpression$1", "symbols": ["arrayItem"]},
-    {"name": "arrayItem$subexpression$1", "symbols": ["objectItem"]},
-    {"name": "arrayItem$subexpression$2", "symbols": ["number"]},
-    {"name": "arrayItem$subexpression$2", "symbols": ["variable"]},
-    {"name": "arrayItem", "symbols": ["arrayItem$subexpression$1", "_", {"literal":"["}, "_", "arrayItem$subexpression$2", "_", {"literal":"]"}], "postprocess":  (d, l, reject) => {
-        	let f = d[0][0];
-        	let s = d[4][0];
-        	if (!Array.isArray(f)) return reject;
-        	if (typeof s != 'number') return reject;
+    {"name": "arrayItem", "symbols": ["array", "_", {"literal":"["}, "_", "number", "_", {"literal":"]"}], "postprocess":  (d, l, reject) => {
+        	let f = d[0];
+        	let s = d[4];
         	return getArrayItem(f[s])
         }
         },
+    {"name": "arrayItem", "symbols": ["array", "_", {"literal":"["}, "_", {"literal":"]"}], "postprocess":  (d, l, reject) => {
+        	let f = d[0];
+        	let s = f.length-1;
+        	return getArrayItem(f[s])
+        }
+        },
+    {"name": "function$subexpression$1$subexpression$1", "symbols": ["string"]},
+    {"name": "function$subexpression$1$subexpression$1", "symbols": ["array"]},
+    {"name": "function$subexpression$1$subexpression$1", "symbols": ["object"]},
+    {"name": "function$subexpression$1", "symbols": ["function$subexpression$1$subexpression$1"], "postprocess":  d => {
+        	let n = Object.values(d[0][0]);
+        	if (n === undefined) return null;
+        	return d[0][0];
+        } },
+    {"name": "function$ebnf$1$subexpression$1", "symbols": ["_", {"literal":"."}, "_", (lexer.has("functionName") ? {type: "functionName"} : functionName), "arguments"]},
+    {"name": "function$ebnf$1", "symbols": ["function$ebnf$1$subexpression$1"]},
+    {"name": "function$ebnf$1$subexpression$2", "symbols": ["_", {"literal":"."}, "_", (lexer.has("functionName") ? {type: "functionName"} : functionName), "arguments"]},
+    {"name": "function$ebnf$1", "symbols": ["function$ebnf$1", "function$ebnf$1$subexpression$2"], "postprocess": function arrpush(d) {return d[0].concat([d[1]]);}},
+    {"name": "function", "symbols": [{"literal":"for"}, "_", "function$subexpression$1", "_", {"literal":"=>"}, "function$ebnf$1"], "postprocess":  d => {
+        	if (d[2] === null) throw 'Unexpected input in for loop.';
+        	let array = [];
+        	if (Type.isObject(d[2])) {
+        		array = {};
+        	}
+        	let keys = Object.keys(d[2])
+        	let values = Object.values(d[2])
+        	if (keys.length === 0) return d[2];
+        	for (let i = 0; i < keys.length; i++) {
+        		let value = functions[d[5][0][3].value](d[2][keys[i]], ...d[5][0][4]);
+        		for (let j = 1; j < d[5].length; j++) {
+        			let c = d[5][j];
+        			if (!functions[c[3].value]) {
+        				Type.Error('Function is not defined.');
+        			}
+        			value = functions[c[3]](
+        				value, ...c[4]
+        			);
+        		}
+        		
+        		if (Type.isObject(d[2])) {
+        			array[keys[i]] = value;
+        		}
+        		else array.push(value);
+        	}
+        	return array;
+        } },
     {"name": "function", "symbols": [(lexer.has("functionName") ? {type: "functionName"} : functionName), "arguments"], "postprocess":  d => {
         	if (!functions[d[0]])
         		Type.Error('Function is not defined.')
-        	return functions[d[0]](...d[1]);
+        	return functions[d[0].value](...d[1]);
+        } },
+    {"name": "function$subexpression$2", "symbols": ["string"]},
+    {"name": "function$subexpression$2", "symbols": ["number"]},
+    {"name": "function$subexpression$2", "symbols": ["array"]},
+    {"name": "function$subexpression$2", "symbols": ["object"]},
+    {"name": "function", "symbols": ["function$subexpression$2", "_", {"literal":"=>"}, "_", (lexer.has("functionName") ? {type: "functionName"} : functionName), "arguments"], "postprocess":  d => {
+        	if (!functions[d[4]])
+        		Type.Error('Function is not defined.')
+        	return functions[d[4].value](d[0][0], ...d[5]);
         } },
     {"name": "arguments", "symbols": [{"literal":"("}, "_", {"literal":")"}], "postprocess": d => []},
     {"name": "arguments$ebnf$1", "symbols": []},
@@ -460,13 +609,11 @@ var grammar = {
     {"name": "value", "symbols": ["condition"], "postprocess": id},
     {"name": "value", "symbols": ["boolean"], "postprocess": id},
     {"name": "value", "symbols": ["object"], "postprocess": id},
-    {"name": "value", "symbols": ["objectItem"], "postprocess": id},
     {"name": "value", "symbols": ["array"], "postprocess": id},
-    {"name": "value", "symbols": ["arrayItem"], "postprocess": id},
     {"name": "value", "symbols": ["import"], "postprocess": id},
     {"name": "value", "symbols": ["number"], "postprocess": id},
-    {"name": "value", "symbols": ["string"], "postprocess": id},
     {"name": "value", "symbols": ["hex"], "postprocess": id},
+    {"name": "value", "symbols": ["string"], "postprocess": id},
     {"name": "value", "symbols": ["myNull"], "postprocess": d => null},
     {"name": "hex", "symbols": [(lexer.has("hexLong") ? {type: "hexLong"} : hexLong)], "postprocess": d => d[0].value},
     {"name": "hex", "symbols": [(lexer.has("hexShort") ? {type: "hexShort"} : hexShort)], "postprocess": d => d[0].value},
@@ -476,22 +623,36 @@ var grammar = {
         		return d[0]
         	return reject;
         } },
+    {"name": "hex", "symbols": ["function"], "postprocess":  (d, l, reject) => {
+        	if (!Type.isHex(d[0]))
+        		return reject;
+        	return d[0];
+        } },
     {"name": "string", "symbols": [(lexer.has("dstring") ? {type: "dstring"} : dstring)], "postprocess": d => d[0].value},
     {"name": "string", "symbols": [(lexer.has("sstring") ? {type: "sstring"} : sstring)], "postprocess": d => d[0].value},
     {"name": "string", "symbols": [(lexer.has("tstring") ? {type: "tstring"} : tstring)], "postprocess": d => d[0].value},
     {"name": "string", "symbols": ["hex"], "postprocess": id},
-    {"name": "string", "symbols": ["function"], "postprocess":  (d, l, reject) => {
-        	if (!Type.isString(d[0]))
+    {"name": "string$subexpression$1", "symbols": ["objectItem"]},
+    {"name": "string$subexpression$1", "symbols": ["arrayItem"]},
+    {"name": "string$subexpression$1", "symbols": ["variable"]},
+    {"name": "string$subexpression$1", "symbols": ["function"]},
+    {"name": "string", "symbols": ["string$subexpression$1"], "postprocess":  (d, l, reject) => {
+        	if (!Type.isString(d[0][0]))
         		return reject;
-        	return d[0];
-        } },
-    {"name": "string", "symbols": [{"literal":"("}, "_", "string", "_", {"literal":")"}], "postprocess": d => d[2]},
-    {"name": "string", "symbols": ["variable"], "postprocess":  (d, l, reject) => {
-        	if (Type.isString(d[0]))
-        		return d[0]
-        	return reject;
+        	return d[0][0];
         } },
     {"name": "string", "symbols": ["string_concat"], "postprocess": id},
+    {"name": "string", "symbols": ["string", "_", {"literal":"["}, "_", "number", "_", {"literal":"]"}], "postprocess":  (d, l, reject) => {
+        	let f = d[0];
+        	let s = d[4];
+        	return f[s];
+        }
+        },
+    {"name": "string", "symbols": ["string", "_", {"literal":"["}, "_", {"literal":"]"}], "postprocess":  (d, l, reject) => {
+        	let f = d[0];
+        	let s = f.length-1
+        	return f[s];
+        } },
     {"name": "WS", "symbols": []},
     {"name": "WS", "symbols": [(lexer.has("space") ? {type: "space"} : space)], "postprocess": d => null},
     {"name": "_$ebnf$1", "symbols": []},
@@ -502,37 +663,14 @@ var grammar = {
     {"name": "import", "symbols": [{"literal":"import"}, "_", "file"], "postprocess":  function(d) {
         	return d[2];
         } },
-    {"name": "file", "symbols": ["string"], "postprocess":  function(d, l, reject) { 
-        	/*if (/https?:\/\/(www\.)?[-a-zA-Z0-9@:%_\+.~#?&//=]{2,256}\.[a-z]{2,4}\b(\/[-a-zA-Z0-9@:%_\+.~#?&//=]*)?/gi) {
-        		var request = new XMLHttpRequest();
-        		request.open('GET', d[0], false);  // `false` makes the request synchronous
-        		request.send(null);
-        		let res = l;
-        		try {
-        			if (request.status === 200) {
-        				log(request.responseText);
-        				return JSON.parse(request.responseText);
-        			} else {
-        				throw 'Resource not found'
-        			}
-        		} catch (err) {
-        			console.error(err)
-        			return null
-        		}
-        	} else
-        	if (/\.next$/.test(d[0])) {
-        		let read = readFile(d[0]).trim()
-        		//let res = require('./parser.js')(read)
-        		return {}//JSON.parse(res);
-        	} else */
-        	// for now only json files are supported
+    {"name": "file", "symbols": ["string"], "postprocess":  function(d, l, reject) {
         	if (/\.json$/.test(d[0])) {
         		let read = readFile(d[0])
         		return JSON.parse(read.trim());
         	}
         	else {
-        		console.warn(`  File ${d[0]} is not found.`)
-        		return l
+        		console.error(`[File Error]: "${d[0]}" is not found or is not json formated.`)
+        		return null
         	}
         } }
 ]

@@ -1,16 +1,24 @@
 const moo = require('moo');
 
 module.exports = moo.compile({
+	// 'this': {match: /\bthis\b/, value: x => function () {return this}},
+	'logical_and': /\band\b|&&/,
+	'logical_or': /\bor\b|\|\|/,
+	'not': /\bnot\b/,
+	'is': /\bis\b/,
+	'for': /\bfor\b/,
+	'in': /\bin\b/,
+	'=>': /=>/,
 	htmlContent: {
 		match: /\(\s*\(?:(?!>\s*\))*<[\s\S]+\>\s*\)/, lineBreaks: true
 	},
 	functionName: [
 		{
-			match: /error|log|Number|String|Boolean|Array|Object|isNull/,
+			match: /error|log|Number|String|Boolean|Array|Object|isNull|Boolean|isNumber|isString|isObject|isArray|isHex/,
 		},
 		{
 			// functions with number output
-			match: /sqrt|pow|length|join|random|invert|abs|round|sum|reduce|multiply|divide/
+			match: /sqrt|pow|length|join|random|invert|abs|round|sum|reduce|multiply|divide|push|insert|slice|remove|reverse|split/
 		}
 	],
 	// hexadecimals
@@ -25,6 +33,7 @@ module.exports = moo.compile({
 	random: "random",
 	// join: "join",
 	PI: 'PI',
+	E: 'E',
 	// length: "length",
 	//log: "log",
 	dstring: {match: /"(?:\\["bfnrt\/\\]|\\u[a-fA-F0-9]{4}|[^"\\])*"/},
@@ -32,8 +41,9 @@ module.exports = moo.compile({
 	tstring: {match: /`(?:\\[`fnrt\/\\]|\\u[a-fA-F0-9]{4}|[^`\\])*`/, lineBreaks: true, value: x => x.slice(1, -1)},
 	htmlContent: {match: /html`(?:\\[`fnrt\/\\]|\\u[a-fA-F0-9]{4}|[^`\\])*`/, lineBreaks: true, value: x => x.slice(4)},
 	variableName: /\$[A-Za-z_0-9\$]+/,
-	'?': /\?|than/,
-    'else': /else|\:/,
+	'?': /\?|\bthan\b/,
+    'else': /\belse\b|\:/,
+	'.': '.',
 	'>': '>',
 	'<': '<',
 	'>=': '>=',
@@ -42,10 +52,6 @@ module.exports = moo.compile({
 	// '!==': '!==',
 	'==': '==',
 	// '===': '===',
-	'logical_and': /^and$|&&/,
-	'logical_or': /or|\|\|/,
-	'not': /^not$/,
-	'is': /^is$/,
 	// other
     '{': '{',
     '}': '}',

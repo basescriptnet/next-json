@@ -16,9 +16,9 @@ main -> ( _ (var_assign) ):* json {% d => d[1] %}
 json -> _ (object | array | string | number | boolean | if) _ {% d => {
 		return d[1][0];
 	} %}
+	| "(" _ json _ ")" {% d => d[2] %}
 	| _ myNull _ {% d => null %}
 
-# extract inner content
 html -> %htmlContent
 	{% d => d[0].value %}
 
@@ -28,24 +28,21 @@ variable -> varName {% (d, l, reject) => {
 	if (getValue(d[0]) === undefined) return reject;
 	return getValue(d[0])
 } %}
+	| "(" _ variable _ ")" {% d => d[2] %}
 
 var_assign
 	-> varName _ "=" _ (
-		if | import
-		| expr | string
-		| number | variable
+		if | import | string
+		| number | html
 		| boolean | object
 		| array | myNull
-		| html | arrayItem ) _ ";"
+	) _ ";"
 	{% function(d) {
 		storeVariable(d[0], d[4][0]);
 		return d[4][0];
 	} %}
 
 is -> "is" {% d => "is" %}
-# --------- expressions ---------
-# expr
-# 	-> string_concat {% id %}
 
 # --------- conditions ---------
 than -> "?" {% d => "?" %}
@@ -113,24 +110,13 @@ conditionalValues -> (string | number | myNull | array | object | boolean) {% d 
 # ✅
 # --------- numbers ---------
 number -> %number {% d => parseFloat(d[0].value) %}
-	# | "+" variable {% d => Number(d[1])|0 %}
-	# | "-" variable {% d => -Number(d[1])|0 %}
-	# | "+" boolean {% d => Number(d[1]) %}
-	# | "-" boolean {% d => -Number(d[1]) %}
 	| "PI" {% d => 3.1415926536 %}
-	| function {% (d, l, reject) => {
-		if (!Type.isNumber(d[0]))
+	| "E" {% d => 2.7182818285 %}
+	| (objectItem | arrayItem | variable |function) {% (d, l, reject) => {
+		if (!Type.isNumber(d[0][0]))
 			return reject;
-		return d[0];
+		return d[0][0];
 	} %}
-	| "(" _ number _ ")" {% d => d[2] %}
-	| variable {% (d, l, reject) => {
-		if (Type.isNumber(d[0]))
-			return d[0]
-		return reject;
-	} %}
-	# | expressionResult {% d => log(1) || (d[0].flat(Infinity).join('_')) %}
-	#(d[0].flat(Infinity).join(''))
 
 # --------- operations ---------
 string_concat -> string _ "+" _ string {% d => d[0] + d[4] %}
@@ -158,36 +144,25 @@ boolean ->
 # --------- nulls ---------
 myNull -> "null" {% d => null %}
 	| "(" _ myNull _ ")" {% d => d[2] %}
-	| variable {% (d, l, reject) => {
-		if (d[0] === null)
-			return null
-		return reject;
+	| (objectItem | arrayItem | variable |function) {% (d, l, reject) => {
+		if (!Type.isNull(d[0][0]))
+			return reject;
+		return d[0][0];
 	} %}
 
 # --------- objects ---------
 object -> "{" _ "}" {% function(d) { return {}; } %}
     | "{" _ pair (_ "," _ pair):* (_ ","):? _ "}" {% extractObject %}
-	| objectItem {% (d, l, reject) => {
-		if (!(typeof d[0] === 'object' && !Array.isArray(d[0]) && d[0] !== null))
+	| (objectItem | arrayItem | variable |function) {% (d, l, reject) => {
+		if (!Type.isObject(d[0][0]))
 			return reject;
-		return d[0];
-	} %}
-	| variable {% (d, l, reject) => {
-		if (Type.isObject(d[0]))
-			return d[0]
-		return reject;
+		return d[0][0];
 	} %}
 
-objectItem -> (object | variable | arrayItem | objectItem) _ "[" _ (string | variable) _ "]" {% (d, l, reject) => {
-		let f = d[0][0];
-		let s = d[4][0];
-		if (typeof s != 'string') return reject;
-		if (!(typeof d[0][0] === 'object' && !Array.isArray(d[0][0]) && d[0][0] !== null))
-			return reject;
-		let item = getArrayItem(f[s]);
-		if (!(typeof item === 'object' && !Array.isArray(item) && item !== null))
-			return reject;
-		return item;
+objectItem -> object _ "[" _ string _ "]" {% (d, l, reject) => {
+		let f = d[0];
+		let s = d[4];
+		return getArrayItem(f[s]);
 	}
 %}
 
@@ -201,31 +176,70 @@ property -> %property {% d => d[0].value %}
 # --------- arrays ---------
 array -> "[" _ "]" {% function(d) { return []; } %}
     | "[" _ value (_ "," _ value):* (_ ","):? _ "]" {% extractArray %}
-	| arrayItem {% (d, l, reject) => {
-		if (!Array.isArray(d[0])) return reject;
-		return d[0];
-	} %}
-	| variable {% (d, l, reject) => {
-		if (Type.isArray(d[0]))
-			return d[0]
-		return reject;
+	| (objectItem | arrayItem | variable |function) {% (d, l, reject) => {
+		if (!Type.isArray(d[0][0]))
+			return reject;
+		return d[0][0];
 	} %}
 
-arrayItem -> (array | variable | arrayItem | objectItem) _ "[" _ (number | variable) _ "]" {% (d, l, reject) => {
-		let f = d[0][0];
-		let s = d[4][0];
-		if (!Array.isArray(f)) return reject;
-		if (typeof s != 'number') return reject;
+arrayItem -> array _ "[" _ number _ "]" {% (d, l, reject) => {
+		let f = d[0];
+		let s = d[4];
+		return getArrayItem(f[s])
+	}
+%}
+	| array _ "[" _ "]" {% (d, l, reject) => {
+		let f = d[0];
+		let s = f.length-1;
 		return getArrayItem(f[s])
 	}
 %}
 
 # --------- functions ---------
-function -> %functionName arguments {% d => {
-	if (!functions[d[0]])
-		Type.Error('Function is not defined.')
-	return functions[d[0]](...d[1]);
-} %}
+function ->
+	"for" _ ((string | array | object) {% d => {
+		let n = Object.values(d[0][0]);
+		if (n === undefined) return null;
+		return d[0][0];
+	} %}) _ "=>" ( _ "." _ %functionName arguments):+
+	{% d => {
+		if (d[2] === null) throw 'Unexpected input in for loop.';
+		let array = [];
+		if (Type.isObject(d[2])) {
+			array = {};
+		}
+		let keys = Object.keys(d[2])
+		let values = Object.values(d[2])
+		if (keys.length === 0) return d[2];
+		for (let i = 0; i < keys.length; i++) {
+			let value = functions[d[5][0][3].value](d[2][keys[i]], ...d[5][0][4]);
+			for (let j = 1; j < d[5].length; j++) {
+				let c = d[5][j];
+				if (!functions[c[3].value]) {
+					Type.Error('Function is not defined.');
+				}
+				value = functions[c[3]](
+					value, ...c[4]
+				);
+			}
+			
+			if (Type.isObject(d[2])) {
+				array[keys[i]] = value;
+			}
+			else array.push(value);
+		}
+		return array;
+	} %}
+	| %functionName arguments {% d => {
+		if (!functions[d[0]])
+			Type.Error('Function is not defined.')
+		return functions[d[0].value](...d[1]);
+	} %}
+	| (string | number | array | object) _ "=>" _ %functionName arguments {% d => {
+		if (!functions[d[4]])
+			Type.Error('Function is not defined.')
+		return functions[d[4].value](d[0][0], ...d[5]);
+	} %}
 
 arguments -> "(" _ ")" {% d => [] %}
 	| "(" _ value (_ "," _ value):* (_ ","):? _ ")" {% d => extractArray(d) %}
@@ -238,14 +252,11 @@ value ->
 	| condition {% id %}
 	| boolean {% id %}
     | object {% id %}
-	| objectItem {% id %}
     | array {% id %}
-	| arrayItem {% id %}
 	| import {% id %}
     | number {% id %}
-    | string {% id %}
 	| hex {% id %}
-	# | expr {% id %}
+    | string {% id %}
     | myNull {% d => null %}
 
 hex -> %hexLong {% d => d[0].value %}
@@ -256,30 +267,39 @@ hex -> %hexLong {% d => d[0].value %}
 			return d[0]
 		return reject;
 	} %}
+	| function {% (d, l, reject) => {
+		if (!Type.isHex(d[0]))
+			return reject;
+		return d[0];
+	} %}
 
 # --------- strings ---------
 string -> %dstring {% d => d[0].value %}
 	| %sstring {% d => d[0].value %}
 	| %tstring {% d => d[0].value %}
 	| hex {% id %}
-	| function {% (d, l, reject) => {
-		if (!Type.isString(d[0]))
+	| (objectItem | arrayItem | variable |function) {% (d, l, reject) => {
+		if (!Type.isString(d[0][0]))
 			return reject;
-		return d[0];
-	} %}
-	| "(" _ string _ ")" {% d => d[2] %}
-	| variable {% (d, l, reject) => {
-		if (Type.isString(d[0]))
-			return d[0]
-		return reject;
+		return d[0][0];
 	} %}
 	| string_concat {% id %}
+	| string _ "[" _ number _ "]" {% (d, l, reject) => {
+		let f = d[0];
+		let s = d[4];
+		return f[s];
+	}
+%}
+	| string _ "[" _ "]" {% (d, l, reject) => {
+		let f = d[0];
+		let s = f.length-1
+		return f[s];
+	} %}
 
 # --------- whitespace ---------
 WS -> null | %space {% d => null %}
 
 _ -> (WS %comment):* WS {% d => {} %}
-	# | (WS %commentBlock):* WS {% d => {} %}
 
 # --------- special chars ---------
 semicolon -> %semicolon {% d => d[0].value %} 
@@ -289,43 +309,19 @@ import -> "import" _ file {% function(d) {
 	return d[2];
 } %}
 
-file -> string {% function(d, l, reject) { 
-	/*if (/https?:\/\/(www\.)?[-a-zA-Z0-9@:%_\+.~#?&//=]{2,256}\.[a-z]{2,4}\b(\/[-a-zA-Z0-9@:%_\+.~#?&//=]*)?/gi) {
-		var request = new XMLHttpRequest();
-		request.open('GET', d[0], false);  // `false` makes the request synchronous
-		request.send(null);
-		let res = l;
-		try {
-			if (request.status === 200) {
-				log(request.responseText);
-				return JSON.parse(request.responseText);
-			} else {
-				throw 'Resource not found'
-			}
-		} catch (err) {
-			console.error(err)
-			return null
-		}
-	} else
-	if (/\.next$/.test(d[0])) {
-		let read = readFile(d[0]).trim()
-		//let res = require('./parser.js')(read)
-		return {}//JSON.parse(res);
-	} else */
-	// for now only json files are supported
+file -> string {% function(d, l, reject) {
 	if (/\.json$/.test(d[0])) {
 		let read = readFile(d[0])
 		return JSON.parse(read.trim());
 	}
 	else {
-		console.warn(`  File ${d[0]} is not found.`)
-		return l
+		console.error(`[File Error]: "${d[0]}" is not found or is not json formated.`)
+		return null
 	}
 } %}
 
 @{%
 
-//const $this = {};
 const fs = require('fs');
 const required = (functionName, argumentName, item, type) => {
 	if (Type.isUndefined(item)) {
@@ -337,21 +333,40 @@ const required = (functionName, argumentName, item, type) => {
 		Type.ArgumentError(`"${argumentName}" at "${functionName}()" must be typeof "${typeof type === 'string' ? type : type.join('/')}", got "${Type(item)}" instead.`);
 	}
 }
-const variables = {};
+const localVariables = {};
+const variables = {
+	$this: null
+};
 const functions = {
+	// debugging
 	error (message) {
-		required('error', 'message', message, 'any');
+		required('error', 'message', message);
 		console.error('>>> ' + message)
 		return message
 	},
 	log (message) {
-		required('log', 'message', message, 'any');
+		required('log', 'message', message);
 		log('>>> ' + message)
 		return message
 	},
-	len (array) {
-		required('len', 'array', array, 'array');
+	// array <=> string
+	join (args, separator) {
+		required('join', 'First argument', args, 'array');
+		if (args.length === 0)
+			return '';
+		let result = '';
+		args.map(i => functions.String(i));
+		return args.join(
+			separator !== undefined ? functions.String(separator)
+				: undefined
+		)
 	},
+	split (string, separator = '') {
+		required('split', 'First argument', string, 'string');
+		required('split', 'Second argument', separator, 'string');
+		return string.split(separator)
+	},
+	// math operations
 	sqrt (number) {
 		required('sqrt', 'First argument', number, 'number');
 		return Math.sqrt(number)
@@ -370,17 +385,6 @@ const functions = {
 		}
 
 	},
-	join (args, separator) {
-		required('join', 'First argument', args, 'array');
-		if (args.length === 0)
-			return '';
-		let result = '';
-		args.map(i => functions.String(i));
-		return args.join(
-			separator !== undefined ? functions.String(separator)
-				: undefined
-		)
-	},
 	random (min, max) {
 		if (min === undefined) {
 			return +Math.random().toFixed(2)
@@ -392,21 +396,6 @@ const functions = {
 				return 0;
 			return ~~(Math.random() * (max - min) + min)
 		}
-	},
-	String (item) {
-		required('String', 'At least one argument', item)
-		switch (Type(item)) {
-			case 'object':
-				return 'object';
-			case 'array':
-				return 'array';
-			default:
-				return item + '';
-		}
-	},
-	Number (item) {
-		required('Number', 'At least one argument', item)
-		return (item)|0 // bitwise | turn anything inside the () into a number
 	},
 	abs (number) {
 		required('abs', 'First argument', number, 'number')
@@ -464,9 +453,129 @@ const functions = {
 		}
 		return eval(`(${first})/(${second})/${rest.length ? rest.join('/') : 1}`);
 	},
+	// type convert
+	String (item) {
+		required('String', 'At least one argument', item)
+		switch (Type(item)) {
+			case 'object':
+			case 'array':
+				return JSON.stringify(item);
+			default:
+				return item + '';
+		}
+	},
+	Number (item) {
+		required('Number', 'At least one argument', item)
+		return (item)|0 // bitwise | turn anything inside the () into a number
+	},
+	Boolean (item) {
+		required('Boolean', 'At least one argument', item)
+		return !!item
+	},
+	Array (item) {
+		required('Array', 'At least one argument', item)
+		switch (Type(item)) {
+			case 'string':
+				return item.split('');
+			case 'object':
+				return Object.values(item);
+			/*case 'number':
+			case 'null':
+			case 'boolean':
+			case 'hex':
+			case 'array':*/
+			default:
+				return [item];
+		}
+		return []
+	},
+	Object (item) {
+		required('Object', 'At least one argument', item)
+		let key = Type(item);
+		if (key === 'string')
+		try {
+			return JSON.parse(item)
+		} catch (err) {}
+		let obj = {}
+		obj[key] = item
+		return obj;
+	},
+	// type check
+	isNumber (item) {
+		required('isNumber', 'At least one argument', item);
+		return Type(item) == 'number'
+	},
+	isString (item) {
+		required('isString', 'At least one argument', item);
+		return Type(item) == 'string' || Type(item) == 'hex'
+	},
+	isArray (item) {
+		required('isArray', 'At least one argument', item);
+		return Type(item) == 'array'
+	},
 	isNull (item) {
 		required('isNull', 'At least one argument', item);
 		return item === null;
+	},
+	isHex (item) {
+		required('isHex', 'At least one argument', item);
+		return Type(item) == 'hex';
+	},
+	// array/object interactions
+	push (array, ...rest) {
+		required('push', 'First argument', array, 'array');
+		if (rest.length)
+			for (let i = 0; i < rest.length; i++) {
+				let j = rest[i];
+				array.push(j);
+			}
+		else array.push(null)
+		return array;
+	},
+	insert (target, insertable) {
+		required('insert', 'First argument', target, ['object', 'array']);
+		if (Type.isObject(target)) {
+			required('insert', 'Second argument', insertable, 'object');
+			return Object.assign(target, insertable);
+		} else {
+			required('insert', 'Second argument', insertable, 'array');
+			return [...target, ...insertable];
+		}
+	},
+	slice (target, start, end) {
+		required('slice', 'First argument', target, ['array', 'string']);
+		required('slice', 'Second argument', start, 'number');
+		if (end === undefined) end = target.length
+		else if (typeof end !== 'number') {
+			required('slice', 'Third argument', end, 'number');
+		}
+		let result = null;
+		return target.slice(start, end)
+	},
+	remove (target, item) {
+		required('remove', 'First argument', target, ['string', 'object', 'array']);
+		let result = null;
+		if (Type.isObject(target)) {
+			required('remove', 'Second argument', item, 'string');
+			result = target[item]
+			delete target[item];
+		}
+		else {
+			required('remove', 'Second argument', item, 'number');
+			if (Type.isArray(target)) {
+				result = target.splice(item, 1)[0]
+			} else {
+				result = target.split('').splice(item, 1).join('')
+			}
+		}
+		return result === undefined ? null : result;
+	},
+	reverse (target) {
+		required('remove', 'First argument', target, ['string', 'array']);
+		if (Type.isString(target)) {
+			return target.split('').reverse().join('')
+		}
+		return target.reverse()
 	}
 };
 //$this.variables = variables;
@@ -475,6 +584,7 @@ const Type = require('./Type')
 
 function storeVariable (varName, value) {
 	variables[varName] = value;
+	return varName
 }
 
 function getArrayItem(item) {
